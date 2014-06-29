@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 {- |
 Module      :  Lambda.Parser
 Description :  Parser.
@@ -44,30 +43,30 @@ lambdaDef = T.LanguageDef
 lexer = T.makeTokenParser lambdaDef
 
 name :: Parser Name
-name = Name . pack <$> T.identifier lexer
+name = fromString <$> T.identifier lexer
 
 opName :: Parser Name
-opName = Name . pack <$> T.operator lexer
+opName = fromString <$> T.operator lexer
 
 variable :: Parser UExpr
-variable = uVar <$> name
+variable = uEVar <$> name
                 <?> "a variable"
 
 abstraction :: Parser UExpr
-abstraction = uAbs <$ T.symbol lexer "λ" 
+abstraction = uEAbs <$ T.symbol lexer "λ" 
                    <*> name 
                    <* T.dot lexer
                    <*> expr
                    <?> "an abstraction"
 
 application :: Parser UExpr
-application = foldl' uApp <$> simpleUExpr <*> many1 simpleUExpr <?> "an application"
+application = foldl' uEApp <$> simpleExpr <*> many1 simpleExpr <?> "an application"
 
 operator :: Parser UExpr
-operator = uApp <$> (flip uApp <$> simpleUExpr <*> (uVar <$> opName)) <*> simpleUExpr
+operator = uEApp <$> (flip uEApp <$> simpleExpr <*> (uEVar <$> opName)) <*> simpleExpr
 
 letBinding :: Parser UExpr
-letBinding = uLet <$ T.reserved lexer "let"
+letBinding = uELet <$ T.reserved lexer "let"
                   <*> name
                   <* T.reservedOp lexer "="
                   <*> expr
@@ -76,7 +75,7 @@ letBinding = uLet <$ T.reserved lexer "let"
                   <?> "a let binding"
 
 literal :: Parser UExpr
-literal = uLit <$> literal'
+literal = uELit <$> literal'
                <?> "a literal"
     where
         literal' =   (LitChar <$> T.charLiteral lexer)
@@ -84,8 +83,8 @@ literal = uLit <$> literal'
                  <|> (LitInteger <$> T.integer lexer)
                  <|> (LitDouble <$> T.float lexer)
 
-simpleUExpr :: Parser UExpr
-simpleUExpr =   T.parens lexer (uVar <$> opName <|> expr)
+simpleExpr :: Parser UExpr
+simpleExpr =    T.parens lexer (uEVar <$> opName <|> expr)
             <|> literal
             <|> variable
             <?> "a variable, literal or a parenthesed expression"
@@ -95,7 +94,7 @@ expr =   letBinding
      <|> abstraction
      <|> try application
      <|> try operator
-     <|> simpleUExpr
+     <|> simpleExpr
      <?> "an expression"
 
 program :: Parser [UExpr]

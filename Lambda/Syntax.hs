@@ -28,29 +28,29 @@ data Literal = LitChar Char
     deriving (Eq, Show, Read)
 
 -- Untyped expression.
-data UExpr' expr = Var Name
-                 | Lit Literal
-                 | Abs Name expr
-                 | App expr expr
-                 | Let Name expr expr
+data UExpr' expr = EVar Name
+                 | ELit Literal
+                 | EAbs Name expr
+                 | EApp expr expr
+                 | ELet Name expr expr
     deriving (Eq, Show, Read, Functor, Foldable, Traversable)
 
 type UExpr = Fix UExpr'
 
-uVar :: Name -> UExpr
-uVar = Fix . Var
+uEVar :: Name -> UExpr
+uEVar = Fix . EVar
 
-uLit :: Literal -> UExpr
-uLit = Fix . Lit
+uELit :: Literal -> UExpr
+uELit = Fix . ELit
 
-uAbs :: Name -> UExpr -> UExpr
-uAbs n e = Fix $ Abs n e
+uEAbs :: Name -> UExpr -> UExpr
+uEAbs n e = Fix $ EAbs n e
 
-uApp :: UExpr -> UExpr -> UExpr
-uApp e1 e2 = Fix $ App e1 e2
+uEApp :: UExpr -> UExpr -> UExpr
+uEApp e1 e2 = Fix $ EApp e1 e2
 
-uLet :: Name -> UExpr -> UExpr -> UExpr
-uLet n e1 e2 = Fix $ Let n e1 e2
+uELet :: Name -> UExpr -> UExpr -> UExpr
+uELet n e1 e2 = Fix $ ELet n e1 e2
 
 -- Typed expression.
 data TExpr' expr = TExpr Type (UExpr' expr)
