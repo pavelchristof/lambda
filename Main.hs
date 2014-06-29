@@ -13,10 +13,13 @@ compile filePath = do
     text <- Text.readFile filePath
     case parse program filePath text of
          Left err -> print err
-         Right exprs -> do
-             case runInfer $ mapM infer exprs of
-                  Left err -> putStrLn . render . format $ err
-                  Right typedExprs -> mapM_ (putStrLn . render . format) typedExprs
+         Right exprs -> sequence_ $ do
+             expr <- exprs
+             return $ do
+                 case runInfer $ infer expr of
+                      Left err -> putStrLn . render . format $ err
+                      Right typedExpr -> putStrLn . render . format $ typedExpr
+                 putStrLn ""
 
 main :: IO ()
 main = do

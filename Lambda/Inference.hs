@@ -118,7 +118,7 @@ inferA (EApp e1 e2) = do
     (s1, te1) <- e1
     (s2, te2) <- local (apply s1) e2
     s3 <- mgu (apply s2 (typeOf te1)) (TFun (typeOf te2) tVar)
-    return ((s3 <> s2) <> s1, tEApp (apply s3 tVar) te1 te2)
+    return (s3 <> s2 <> s1, tEApp (apply s3 tVar) te1 te2)
 inferA (ELet n e1 e2) = do
     (s1, te1) <- e1
     qtype <- local (apply s1) generalize (typeOf te1)
