@@ -1,0 +1,18 @@
+let a = 42 in
+let b = "string" in
+let id = λx.x in
+    id a;
+
+let a = "string" in
+let b = 42 in
+let wtf = λx.λx.0 in
+let id = λx.x in
+    wtf (id a) (id b) "dupa";
+
+let zero = λf.λx.x in
+let succ = λn.λf.λx.f (n f x) in
+let one = succ zero in
+let two = succ one in
+let three = succ two in
+let plus = λm.λn.λf.λx.m f (n f x) in
+    plus three two;

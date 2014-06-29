@@ -25,6 +25,7 @@ import qualified Data.Text as Text
 
 import Lambda.Name
 import Lambda.Syntax
+import Lambda.Located
 
 lambdaDef = T.LanguageDef
     { T.commentStart    = "{-"
@@ -48,16 +49,19 @@ name = fromString <$> T.identifier lexer
 opName :: Parser Name
 opName = fromString <$> T.operator lexer
 
+located :: Parser a -> Parser (Located a)
+located = (Located <$> getPosition <*>)
+
 variable :: Parser UExpr
 variable = uEVar <$> name
-                <?> "a variable"
+                 <?> "a variable"
 
 abstraction :: Parser UExpr
 abstraction = uEAbs <$ T.symbol lexer "λ" 
-                   <*> name 
-                   <* T.dot lexer
-                   <*> expr
-                   <?> "an abstraction"
+                    <*> name
+                    <* T.dot lexer
+                    <*> expr
+                    <?> "an abstraction"
 
 application :: Parser UExpr
 application = foldl' uEApp <$> simpleExpr <*> many1 simpleExpr <?> "an application"
@@ -67,16 +71,16 @@ operator = uEApp <$> (flip uEApp <$> simpleExpr <*> (uEVar <$> opName)) <*> simp
 
 letBinding :: Parser UExpr
 letBinding = uELet <$ T.reserved lexer "let"
-                  <*> name
-                  <* T.reservedOp lexer "="
-                  <*> expr
-                  <* T.reserved lexer "in"
-                  <*> expr
-                  <?> "a let binding"
+                   <*> name
+                   <* T.reservedOp lexer "="
+                   <*> expr
+                   <* T.reserved lexer "in"
+                   <*> expr
+                   <?> "a let binding"
 
 literal :: Parser UExpr
 literal = uELit <$> literal'
-               <?> "a literal"
+                <?> "a literal"
     where
         literal' =   (LitChar <$> T.charLiteral lexer)
                  <|> (LitString . pack <$> T.stringLiteral lexer)

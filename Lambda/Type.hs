@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell, Rank2Types #-}
 {- |
 Module      :  Lambda.Type
 Description :  Type.
@@ -14,6 +15,7 @@ module Lambda.Type where
 
 import Control.Applicative
 import Control.Lens
+import Data.Monoid
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -23,22 +25,23 @@ import Lambda.Name
 
 -- A type. So far only types of kind * are supported.
 data Type = TVar Name
+          | TLit Name
           | TFun Type Type
           | TList Type
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Show)
 
 tChar :: Type
-tChar = TVar $ Name "Char"
+tChar = TLit $ Name "Char"
 
 tInt :: Type
-tInt = TVar $ Name "Int"
+tInt = TLit $ Name "Int"
 
 tDouble :: Type
-tDouble = TVar $ Name "Double"
+tDouble = TLit $ Name "Double"
 
 -- An universally quantified type.
 data QuantType = QuantType (Set Name) Type
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 -- Structures containing free type variables.
 class HasFreeTVars t where
@@ -46,6 +49,7 @@ class HasFreeTVars t where
 
 instance HasFreeTVars Type where
     freeTVars f (TVar n) = f n
+    freeTVars f t@(TLit _) = pure t
     freeTVars f (TFun t1 t2) = TFun <$> freeTVars f t1 <*> freeTVars f t2
     freeTVars f (TList t) = TList <$> freeTVars f t
 
@@ -55,16 +59,27 @@ instance HasFreeTVars QuantType where
                   | Set.member name q = pure . TVar $ name
                   | otherwise         = f name
 
-instance HasFreeTVars [Type] where
-    freeTVars f = traverse (freeTVars f)
+instance (Traversable t, HasFreeTVars a) => HasFreeTVars (t a) where
+    freeTVars = traverse . freeTVars
+
+-- Type substitution.
+newtype TSubst = TSubst { _subst :: Map Name Type }
+makeIso ''TSubst
+
+instance Monoid TSubst where
+    mempty = TSubst Map.empty
+    s1 `mappend` s2 = TSubst $ _subst (apply s1 s2) `Map.union` _subst s1
+
+instance HasFreeTVars TSubst where
+    freeTVars = subst . freeTVars
 
 -- Creates a set of all free type variables.
 setOfFreeTVars :: HasFreeTVars t => t -> Set Name
 setOfFreeTVars = Set.fromList . (toListOf (freeTVars . (fmap TVar .)))
 
 -- Substitutes free type variables.
-substFreeTVars :: HasFreeTVars t => Map Name Type -> t -> t
-substFreeTVars dict = over freeTVars f
-    where f name = case Map.lookup name dict of
+apply :: HasFreeTVars t => TSubst -> t -> t
+apply (TSubst subst) = over freeTVars f
+    where f name = case Map.lookup name subst of
                         Just t -> t
                         Nothing -> TVar name

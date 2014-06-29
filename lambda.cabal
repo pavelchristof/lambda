@@ -17,9 +17,9 @@ cabal-version:       >=1.10
 
 executable lambda
   main-is:             Main.hs
-  other-modules:       Lambda.Name, Lambda.Type, Lambda.Syntax, Lambda.Parser, Lambda.Inference
+  other-modules:       Lambda.Name, Lambda.Type, Lambda.Syntax, Lambda.Parser, Lambda.Inference, Lambda.PrettyPrint
   other-extensions:    TemplateHaskell
-  build-depends:       base, parsec, text, recursion-schemes, lens, mtl, containers, transformers
+  build-depends:       base, parsec, text, recursion-schemes, lens, mtl, containers, transformers, pretty
   -- hs-source-dirs:      
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses
