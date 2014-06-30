@@ -25,4 +25,24 @@ let rec ++ = λl.λr.
 -- An infinite list of 42.
 let rec a = 42:a;
 
+-- Right fold.
+let foldr = λk.λz.
+    let rec go = λl.
+        if (null l)
+            z
+            (k (head l) (go (tail l)))
+    in go;
+
+-- String to int conversion.
+let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+let indexOf = λe.
+    let rec indexOf' = λi.λl.
+        if ((head l) == e)
+            i
+            (indexOf' (i + 1) (tail l))
+    in  indexOf' 0;
+let strToInt = foldr (λc.λn. (10*n) + (indexOf c digits)) 0;
+
 printInt $ head a;
+printStr $ head $ ["abc", "def"];
+printInt ((strToInt . head) ["a list", "of strings"]);

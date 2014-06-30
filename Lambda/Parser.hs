@@ -12,6 +12,7 @@ Portability :  portable
 
 module Lambda.Parser where
 
+import Control.Lens ((^.))
 import Control.Applicative hiding ((<|>), many)
 import Data.String
 import Data.List (foldl')
@@ -35,7 +36,7 @@ lambdaDef = T.LanguageDef
     , T.identLetter     = alphaNum <|> oneOf "_'"
     , T.opStart         = T.opLetter lambdaDef
     , T.opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
-    , T.reservedOpNames = ["="]
+    , T.reservedOpNames = ["=", "[", "]", ","]
     , T.reservedNames   = ["let", "rec", "in", "True", "False"]
     , T.caseSensitive   = True
     }
@@ -112,8 +113,21 @@ literal = fELit <$> getPosition
                  <|> (LitInteger <$> T.integer lexer)
                  <|> (LitDouble <$> T.float lexer)
 
+list :: Parser PExpr
+list = do
+    T.reservedOp lexer "["
+    exprs <- T.commaSep lexer expr
+    T.reservedOp lexer "]"
+    pos <- getPosition
+    return $ foldr buildList (fELit pos LitEmptyList) exprs
+    where
+        buildList e l =
+            let pos = e^.posOf
+            in (fEApp pos (fEApp pos (fEVar pos ":") e) l)
+
 atom :: Parser PExpr
 atom =   T.parens lexer (opVariable <|> expr <|> unit)
+     <|> list
      <|> literal
      <|> variable
      <?> "a variable, literal or a parenthesed expression"

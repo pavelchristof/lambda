@@ -36,9 +36,10 @@ instance PrettyPrint Type where
 instance PrettyPrint Literal where
     format LitUnit = "()"
     format (LitChar c) = char c
-    format (LitString s) = text . unpack $ s
+    format (LitString s) = doubleQuotes . text . unpack $ s
     format (LitInteger i) = integer i
     format (LitDouble d) = double d
+    format LitEmptyList = "[]"
 
 instance PrettyPrint PExpr where
     format (Fix (EVar _ n)) = format n

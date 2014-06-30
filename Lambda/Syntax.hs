@@ -31,6 +31,7 @@ data Literal = LitUnit
              | LitString Text
              | LitInteger Integer
              | LitDouble Double
+             | LitEmptyList
     deriving (Eq, Show)
 
 -- Expression.

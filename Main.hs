@@ -18,13 +18,13 @@ initBindings = Map.fromList
     , ("-", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
     , ("/", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
     , ("*", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    , ("==", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
     , ("<", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
     , ("<=", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
     , (">", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
     , (">=", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
 
     -- Control flow.
+    , ("==", TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TVar "a") tBool)))
     , ("if", TypeScheme (Set.singleton "a") (TFun tBool (TFun (TVar "a") (TFun (TVar "a") (TVar "a")))))
 
     -- Lists.

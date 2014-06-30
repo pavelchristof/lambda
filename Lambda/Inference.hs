@@ -84,7 +84,7 @@ mgu :: MonadInfer m => Type -> Type -> m TSubst
 mgu (TFun l r) (TFun l' r') = do
     s1 <- mgu l l'
     s2 <- mgu (apply s1 r) (apply s1 r')
-    return $ s1 <> s2
+    return $ s2 <> s1
 mgu (TList t1) (TList t2) = mgu t1 t2
 mgu (TVar n) t = tVarBinding n t
 mgu t (TVar n) = tVarBinding n t
@@ -99,57 +99,63 @@ mgu t1 t2 = do
     throwError $ UnificationError pos t1 t2
 
 -- Inference.
-inferLit :: Literal -> Type
-inferLit LitUnit = tUnit
-inferLit (LitBool _) = tBool
-inferLit (LitChar _) = tChar
-inferLit (LitString _) = TList tChar
-inferLit (LitInteger _) = tInt
-inferLit (LitDouble _) = tDouble
+inferLit :: MonadInfer m => Literal -> m Type
+inferLit LitUnit = return tUnit
+inferLit (LitBool _) = return tBool
+inferLit (LitChar _) = return tChar
+inferLit (LitString _) = return $ TList tChar
+inferLit (LitInteger _) = return tInt
+inferLit (LitDouble _) = return tDouble
+inferLit LitEmptyList = newTVar >>= return . TList
 
 inferExprA :: MonadInfer m => PExprF (m (TSubst, TPExpr)) -> m (TSubst, TPExpr)
-inferExprA (EVar pos n) = do
-    mqt <- view $ bindings . at n
-    case mqt of
-         Just qt -> do
-             t <- instantiate qt
-             return (mempty, fEVar (pos, t) n)
-         Nothing -> throwError $ UnboundVariable pos n
-inferExprA (ELit pos lit) = return (mempty, fELit (pos, inferLit lit) lit)
-inferExprA (EAbs pos n e) = do
-    tVar <- newTVar
-    (s, te) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) e
-    return (s, fEAbs (pos, TFun (apply s tVar) (te^.typeOf)) n te)
-inferExprA (EApp pos e1 e2) = do
-    tVar <- newTVar
-    (s1, te1) <- e1
-    (s2, te2) <- local (apply s1) e2
-    s3 <- local (sourcePos .~ Just pos) $ mgu (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
-    return (s3 <> s2 <> s1, fEApp (pos, apply s3 tVar) te1 te2)
-inferExprA (ELet pos n e1 e2) = do
-    (s1, te1) <- e1
-    scheme <- local (apply s1) $ generalize (te1^.typeOf)
-    (s2, te2) <- local (apply s1 . (bindings . at n .~ Just scheme)) e2
-    return (s1 <> s2, fELet (pos, te2^.typeOf) n te1 te2)
-inferExprA (EFix pos n e) = do
-    tVar <- newTVar
-    (s1, te1) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) e
-    s2 <- mgu (apply s1 tVar) (te1^.typeOf)
-    return (s2 <> s1, fEFix (pos, (apply s2 (te1^.typeOf))) n te1)
+inferExprA (EVar pos x) = do
+    binding <- view $ bindings . at x
+    case binding of
+         Just scheme -> do
+             t0 <- instantiate scheme
+             return (mempty, fEVar (pos, t0) x)
+         Nothing -> throwError $ UnboundVariable pos x
+inferExprA (ELit pos lit) = do
+    t0 <- inferLit lit
+    return (mempty, fELit (pos, t0) lit)
+inferExprA (EApp pos f g) = do
+    (s1, f') <- f
+    (s2, g') <- local (apply s1) g
+    b <- newTVar
+    s3 <- local (sourcePos .~ Just pos) $ mgu (apply s2 (f'^.typeOf)) (TFun (g'^.typeOf) b)
+    return (s3 <> s2 <> s1, fEApp (pos, apply s3 b) f' g')
+inferExprA (EAbs pos x f) = do
+    b <- newTVar
+    (s1, f') <- local (bindings . at x .~ Just (TypeScheme Set.empty b)) f
+    return (s1, fEAbs (pos, TFun (apply s1 b) (f'^.typeOf)) x f')
+inferExprA (EFix pos x f) = do
+    b <- newTVar
+    (s1, f') <- local (bindings . at x .~ Just (TypeScheme Set.empty b)) f
+    s2 <- local (sourcePos .~ Just pos) $ mgu (apply s1 b) (f'^.typeOf)
+    let s21 = s2 <> s1
+    return (s21, fEFix (pos, apply s21 b) x f')
+inferExprA (ELet pos x f g) = do
+    (s1, f') <- f
+    (s2, g') <- local (apply s1) $ do
+        r <- generalize (f'^.typeOf)
+        local (bindings . at x .~ Just r) g
+    return (s2 <> s1, fELet (pos, g'^.typeOf) x f' g')
 
 inferExpr :: MonadInfer m => PExpr -> m (TSubst, TPExpr)
 inferExpr = cata inferExprA
 
 inferStmtsA :: MonadInfer m => Stmt PExpr -> m (TSubst, [Stmt TPExpr]) -> m (TSubst, [Stmt TPExpr])
-inferStmtsA (SLet pos name expr) cont = do
-    (s1, tExpr) <- inferExpr expr
-    scheme <- local (apply s1) $ generalize (tExpr^.typeOf)
-    (s2, stmts) <- local (apply s1 . (bindings . at name .~ Just scheme)) cont
-    return (s1 <> s2, (SLet pos name tExpr):stmts)
-inferStmtsA (SEval pos expr) cont = do
-    (s1, stmts) <- cont
-    (s2, tExpr) <- local (apply s1) (inferExpr expr)
-    return (s1 <> s2, (SEval pos tExpr):stmts)
+inferStmtsA (SLet pos x f) g = do
+    (s1, f') <- inferExpr f
+    (s2, g') <- local (apply s1) $ do
+        r <- generalize (f'^.typeOf)
+        local (bindings . at x .~ Just r) g
+    return (s2 <> s1, (SLet pos x f'):g')
+inferStmtsA (SEval pos f) g = do
+    (s1, f') <- inferExpr f
+    (s2, g') <- local (apply s1) g
+    return (s2 <> s1, (SEval pos f'):g')
 
 inferStmts :: MonadInfer m => [Stmt PExpr] -> m (TSubst, [Stmt TPExpr])
 inferStmts = foldr inferStmtsA (return (mempty, []))
