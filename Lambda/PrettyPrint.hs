@@ -46,7 +46,7 @@ instance PrettyPrint PExpr where
     format (Fix (EAbs _ n e)) = parens ("λ" <> format n <> "." <> format e)
     format (Fix (EApp _ e1 e2)) = parens (format e1 <+> format e2)
     format (Fix (ELet _ n e1 e2)) = hang ("let" <+> format n <+> "=" <+> format e1 <+> "in") 1 (format e2)
-    format (Fix (EFix _ n x e)) = parens ("fix" <+> format n <+> "λ" <> format x <> "." <> format e)
+    format (Fix (EFix _ n e)) = parens ("fix" <+> format n <+> format e)
 
 dcolon :: Doc
 dcolon = colon <> colon
@@ -58,7 +58,7 @@ instance PrettyPrint TPExpr where
     format (Fix (EApp (_, t) e1 e2)) = parens (format e1 <+> format e2) <+> dcolon <+> format t
     format (Fix (ELet (_, t) n e1 e2)) =   parens (hang ("let" <+> format n <+> "=" <+> format e1 <+> "in") 1 (format e2))
                                        <+> dcolon <+> format t
-    format (Fix (EFix (_, t) n x e)) =   parens ("fix" <+> format n <+> "λ" <> format x <> "." <> format e) 
+    format (Fix (EFix (_, t) n e)) =   parens ("fix" <+> format n <+> format e) 
                                      <+> dcolon <+> format t
 
 instance PrettyPrint expr => PrettyPrint (Stmt expr) where

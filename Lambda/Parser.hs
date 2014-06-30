@@ -91,10 +91,10 @@ letRecExpr = do
     T.reserved lexer "let rec"
     n <- name <|> opName
     T.reservedOp lexer "="
-    Fix (EAbs posAbs x e1) <- abstraction
+    e1 <- expr
     T.reserved lexer "in"
     e2 <- expr
-    return (fELet pos n (fEFix posAbs n x e1) e2)
+    return (fELet pos n (fEFix pos n e1) e2)
 
 unit :: Parser PExpr
 unit = fELit <$> getPosition
@@ -140,8 +140,8 @@ letRecStmt = do
     T.reserved lexer "let rec"
     n <- name <|> opName
     T.reservedOp lexer "="
-    Fix (EAbs posAbs x e1) <- abstraction
-    return (SLet pos n (fEFix posAbs n x e1))
+    e <- expr
+    return (SLet pos n (fEFix pos n e))
 
 eval :: Parser (Stmt PExpr)
 eval = SEval <$> getPosition

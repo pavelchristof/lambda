@@ -39,7 +39,7 @@ data ExprF a expr = EVar a Name
                   | EAbs a Name expr
                   | EApp a expr expr
                   | ELet a Name expr expr
-                  | EFix a Name Name expr
+                  | EFix a Name expr
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
 dataOf :: Lens' (ExprF a e) a
@@ -48,7 +48,7 @@ dataOf f (ELit d l) = ELit <$> (f d) ?? l
 dataOf f (EAbs d n e) = EAbs <$> (f d) ?? n ?? e
 dataOf f (EApp d e1 e2) = EApp <$> (f d) ?? e1 ?? e2
 dataOf f (ELet d n e1 e2) = ELet <$> (f d) ?? n ?? e1 ?? e2
-dataOf f (EFix d n1 n2 e) = EFix <$> (f d) ?? n1 ?? n2 ?? e
+dataOf f (EFix d n e) = EFix <$> (f d) ?? n ?? e
 
 unfix :: Lens' (Fix f) (f (Fix f))
 unfix f (Fix x) = Fix <$> (f x)
@@ -69,8 +69,8 @@ fEApp d e1 e2 = Fix $ EApp d e1 e2
 fELet :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a) -> Fix (ExprF a)
 fELet d n e1 e2 = Fix $ ELet d n e1 e2
 
-fEFix :: a -> Name -> Name -> Fix (ExprF a) -> Fix (ExprF a)
-fEFix d n1 n2 e = Fix $ EFix d n1 n2 e
+fEFix :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a)
+fEFix d n e = Fix $ EFix d n e
 
 -- Lenses.
 class HasPos t where

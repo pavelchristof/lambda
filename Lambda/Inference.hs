@@ -131,11 +131,11 @@ inferExprA (ELet pos n e1 e2) = do
     scheme <- local (apply s1) $ generalize (te1^.typeOf)
     (s2, te2) <- local (apply s1 . (bindings . at n .~ Just scheme)) e2
     return (s1 <> s2, fELet (pos, te2^.typeOf) n te1 te2)
-inferExprA (EFix pos n x e) = do
+inferExprA (EFix pos n e) = do
     tVar <- newTVar
-    (s1, te1) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) (inferExprA $ EAbs pos x e)
+    (s1, te1) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) e
     s2 <- mgu (apply s1 tVar) (te1^.typeOf)
-    return (s2 <> s1, fEFix (pos, (apply s2 (te1^.typeOf))) n x te1)
+    return (s2 <> s1, fEFix (pos, (apply s2 (te1^.typeOf))) n te1)
 
 inferExpr :: MonadInfer m => PExpr -> m (TSubst, TPExpr)
 inferExpr = cata inferExprA
