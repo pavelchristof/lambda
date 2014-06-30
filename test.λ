@@ -1,3 +1,4 @@
+-- Function application.
 let $ = λf.λx.f x;
 
 -- Function composition.
@@ -23,3 +24,5 @@ let rec ++ = λl.λr.
 
 -- An infinite list of 42.
 let rec a = 42:a;
+
+printInt $ head a;

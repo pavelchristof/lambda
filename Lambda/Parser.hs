@@ -153,4 +153,4 @@ stmt =   letRecStmt
      <|> eval
 
 program :: Parser [Stmt PExpr]
-program = many (stmt <* T.semi lexer)
+program = T.whiteSpace lexer *> many (stmt <* T.semi lexer)
