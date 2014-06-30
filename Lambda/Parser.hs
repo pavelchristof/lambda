@@ -12,7 +12,6 @@ Portability :  portable
 
 module Lambda.Parser where
 
-import Prelude hiding (takeWhile)
 import Control.Applicative hiding ((<|>), many)
 import Data.String
 import Data.List (foldl')
@@ -37,7 +36,7 @@ lambdaDef = T.LanguageDef
     , T.opStart         = T.opLetter lambdaDef
     , T.opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , T.reservedOpNames = ["="]
-    , T.reservedNames   = ["let", "in"]
+    , T.reservedNames   = ["let", "rec", "in", "True", "False"]
     , T.caseSensitive   = True
     }
 
@@ -68,23 +67,39 @@ abstraction = fEAbs <$> getPosition
                     <?> "an abstraction"
 
 application :: Parser PExpr
-application = foldl' <$> (fEApp <$> getPosition) <*> simpleExpr <*> many1 simpleExpr <?> "an application"
+application = foldl' <$> (fEApp <$> getPosition) <*> atom <*> many1 atom <?> "an application"
 
-operator :: Parser PExpr
-operator = fEApp <$> getPosition 
-                 <*> (flip <$> (fEApp <$> getPosition) <*> simpleExpr <*> opVariable) 
-                 <*> simpleExpr
-                 <?> "an operator"
+opApplication :: Parser PExpr
+opApplication = fEApp <$> getPosition 
+                      <*> (flip <$> (fEApp <$> getPosition) <*> atom <*> opVariable) 
+                      <*> expr
+                      <?> "an operator application"
 
-letBinding :: Parser PExpr
-letBinding = fELet <$> getPosition
-                   <* T.reserved lexer "let"
-                   <*> name
-                   <* T.reservedOp lexer "="
-                   <*> expr
-                   <* T.reserved lexer "in"
-                   <*> expr
-                   <?> "a let binding"
+letExpr :: Parser PExpr
+letExpr = fELet <$> getPosition
+                <* T.reserved lexer "let"
+                <*> (name <|> opName)
+                <* T.reservedOp lexer "="
+                <*> expr
+                <* T.reserved lexer "in"
+                <*> expr
+                <?> "a let binding"
+
+letRecExpr :: Parser PExpr
+letRecExpr = do
+    pos <- getPosition
+    T.reserved lexer "let rec"
+    n <- name <|> opName
+    T.reservedOp lexer "="
+    Fix (EAbs posAbs x e1) <- abstraction
+    T.reserved lexer "in"
+    e2 <- expr
+    return (fELet pos n (fEFix posAbs n x e1) e2)
+
+unit :: Parser PExpr
+unit = fELit <$> getPosition
+             <*> pure LitUnit
+             <?> "an unit"
 
 literal :: Parser PExpr
 literal = fELit <$> getPosition
@@ -92,23 +107,50 @@ literal = fELit <$> getPosition
                 <?> "a literal"
     where
         literal' =   (LitChar <$> T.charLiteral lexer)
+                 <|> (LitBool <$> (T.reserved lexer "True" *> pure True <|> T.reserved lexer "False" *> pure False))
                  <|> (LitString . pack <$> T.stringLiteral lexer)
                  <|> (LitInteger <$> T.integer lexer)
                  <|> (LitDouble <$> T.float lexer)
 
-simpleExpr :: Parser PExpr
-simpleExpr =    T.parens lexer (opVariable <|> expr)
-            <|> literal
-            <|> variable
-            <?> "a variable, literal or a parenthesed expression"
+atom :: Parser PExpr
+atom =   T.parens lexer (opVariable <|> expr <|> unit)
+     <|> literal
+     <|> variable
+     <?> "a variable, literal or a parenthesed expression"
 
 expr :: Parser PExpr
-expr =   letBinding 
-     <|> abstraction
-     <|> try operator
+expr =   abstraction
+     <|> letRecExpr
+     <|> letExpr
+     <|> try opApplication
      <|> try application
-     <|> simpleExpr
+     <|> atom
      <?> "an expression"
 
-program :: Parser [PExpr]
-program = many (expr <* T.semi lexer)
+letStmt :: Parser (Stmt PExpr)
+letStmt = SLet <$> getPosition
+               <* T.reserved lexer "let"
+               <*> (name <|> opName)
+               <* T.reservedOp lexer "="
+               <*> expr
+
+letRecStmt :: Parser (Stmt PExpr)
+letRecStmt = do
+    pos <- getPosition
+    T.reserved lexer "let rec"
+    n <- name <|> opName
+    T.reservedOp lexer "="
+    Fix (EAbs posAbs x e1) <- abstraction
+    return (SLet pos n (fEFix posAbs n x e1))
+
+eval :: Parser (Stmt PExpr)
+eval = SEval <$> getPosition
+             <*> expr
+
+stmt :: Parser (Stmt PExpr)
+stmt =   letRecStmt
+     <|> letStmt
+     <|> eval
+
+program :: Parser [Stmt PExpr]
+program = many (stmt <* T.semi lexer)

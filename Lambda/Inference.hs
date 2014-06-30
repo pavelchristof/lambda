@@ -14,8 +14,8 @@ Portability :  portable
 module Lambda.Inference where
 
 import Control.Lens
-import Control.Monad.Except
 import Control.Monad.Reader
+import Control.Monad.Except
 import Control.Monad.State
 import Text.Parsec.Pos (SourcePos)
 import Data.String
@@ -32,14 +32,15 @@ import Lambda.Type
 import Lambda.Syntax
 
 -- Errors.
-data IError = TUnificationError SourcePos Type Type
-            | TOccursCheckError SourcePos Name Type
-            | TUnboundVariable SourcePos Name
+data IError = UnificationError SourcePos Type Type
+            | OccursCheckError SourcePos Name Type
+            | UnboundVariable SourcePos Name
+            | Redefinition SourcePos Name
     deriving (Eq, Ord, Show)
 
 -- Inference environment.
 data IEnv = IEnv
-    { _bindings :: Map Name QuantType
+    { _bindings :: Map Name TypeScheme
     , _sourcePos :: Maybe SourcePos
     }
 makeLenses ''IEnv
@@ -47,20 +48,14 @@ makeLenses ''IEnv
 instance HasFreeTVars IEnv where
     freeTVars = bindings . freeTVars
 
-insertBinding :: Name -> QuantType -> IEnv -> IEnv
-insertBinding name qtype env = env & bindings . at name .~ Just qtype
-
-removeBinding :: Name -> IEnv -> IEnv
-removeBinding name env = env & bindings . at name .~ Nothing
-
-generalize :: MonadReader IEnv m => Type -> m QuantType
+generalize :: MonadReader IEnv m => Type -> m TypeScheme
 generalize t = do
     binds <- view bindings
-    return $ QuantType (setOfFreeTVars t `Set.difference` setOfFreeTVars binds) t
+    return $ TypeScheme (setOfFreeTVars t `Set.difference` setOfFreeTVars binds) t
 
 -- Inference state.
 data IState = IState
-    { _tVarCounter :: Int 
+    { _tVarCounter :: Int
     }
 makeLenses ''IState
 
@@ -71,8 +66,8 @@ newTVar = tVarCounter <<%= (+1) >>= return . TVar . fromString . ('a':) . show
 -- Inference monad class.
 type MonadInfer m = (MonadError IError m, MonadReader IEnv m, MonadState IState m)
 
-instantiate :: MonadInfer m => QuantType -> m Type
-instantiate (QuantType q t) = do
+instantiate :: MonadInfer m => TypeScheme -> m Type
+instantiate (TypeScheme q t) = do
     list <- mapM (\name -> newTVar >>= return . ((,) name)) (Set.toAscList q)
     let subst = TSubst . Map.fromDistinctAscList $ list
     return $ apply subst t
@@ -82,7 +77,7 @@ tVarBinding :: MonadInfer m => Name -> Type -> m TSubst
 tVarBinding n t | TVar n == t                     = return mempty
                 | Set.member n (setOfFreeTVars t) = do
                     Just pos <- view sourcePos
-                    throwError $ TOccursCheckError pos n t
+                    throwError $ OccursCheckError pos n t
                 | otherwise                       = return . TSubst $ Map.singleton n t
 
 mgu :: MonadInfer m => Type -> Type -> m TSubst
@@ -98,56 +93,77 @@ mgu (TLit n1) (TLit n2) =
        then return mempty
        else do
            Just pos <- view sourcePos
-           throwError $ TUnificationError pos (TLit n1) (TLit n2)
+           throwError $ UnificationError pos (TLit n1) (TLit n2)
 mgu t1 t2 = do
     Just pos <- view sourcePos
-    throwError $ TUnificationError pos t1 t2
+    throwError $ UnificationError pos t1 t2
 
--- Inference algebra.
-inferA :: MonadInfer m => PExprF (m (TSubst, TPExpr)) -> m (TSubst, TPExpr)
-inferA (EVar pos n) = do
-    mqt <- view $ bindings . at n
-    case mqt of
-         Just qt -> do
-             t <- instantiate qt
-             return (mempty, fEVar (pos, t) n)
-         Nothing -> throwError $ TUnboundVariable pos n
-inferA (ELit pos lit) = return (mempty, fELit (pos, inferLit lit) lit)
-inferA (EAbs pos n e) = do
-    tVar <- newTVar
-    (s, te) <- local (insertBinding n (QuantType Set.empty tVar)) e
-    return (s, fEAbs (pos, TFun (apply s tVar) (te^.typeOf)) n te)
-inferA (EApp pos e1 e2) = do
-    tVar <- newTVar
-    (s1, te1) <- e1
-    (s2, te2) <- local (apply s1) e2
-    s3 <- local (sourcePos .~ Just pos) $ mgu (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
-    return (s3 <> s2 <> s1, fEApp (pos, apply s3 tVar) te1 te2)
-inferA (ELet pos n e1 e2) = do
-    (s1, te1) <- e1
-    qtype <- local (apply s1) generalize (te1^.typeOf)
-    (s2, te2) <- local (apply s1 . insertBinding n qtype) e2
-    return (s1 <> s2, fELet (pos, te2^.typeOf) n te1 te2)
-
+-- Inference.
 inferLit :: Literal -> Type
+inferLit LitUnit = tUnit
+inferLit (LitBool _) = tBool
 inferLit (LitChar _) = tChar
 inferLit (LitString _) = TList tChar
 inferLit (LitInteger _) = tInt
 inferLit (LitDouble _) = tDouble
 
-infer :: MonadInfer m => PExpr -> m TPExpr
-infer expr = do
-    (_, t) <- cata inferA expr
-    return t
+inferExprA :: MonadInfer m => PExprF (m (TSubst, TPExpr)) -> m (TSubst, TPExpr)
+inferExprA (EVar pos n) = do
+    mqt <- view $ bindings . at n
+    case mqt of
+         Just qt -> do
+             t <- instantiate qt
+             return (mempty, fEVar (pos, t) n)
+         Nothing -> throwError $ UnboundVariable pos n
+inferExprA (ELit pos lit) = return (mempty, fELit (pos, inferLit lit) lit)
+inferExprA (EAbs pos n e) = do
+    tVar <- newTVar
+    (s, te) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) e
+    return (s, fEAbs (pos, TFun (apply s tVar) (te^.typeOf)) n te)
+inferExprA (EApp pos e1 e2) = do
+    tVar <- newTVar
+    (s1, te1) <- e1
+    (s2, te2) <- local (apply s1) e2
+    s3 <- local (sourcePos .~ Just pos) $ mgu (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
+    return (s3 <> s2 <> s1, fEApp (pos, apply s3 tVar) te1 te2)
+inferExprA (ELet pos n e1 e2) = do
+    (s1, te1) <- e1
+    scheme <- local (apply s1) $ generalize (te1^.typeOf)
+    (s2, te2) <- local (apply s1 . (bindings . at n .~ Just scheme)) e2
+    return (s1 <> s2, fELet (pos, te2^.typeOf) n te1 te2)
+inferExprA (EFix pos n x e) = do
+    tVar <- newTVar
+    (s1, te1) <- local (bindings . at n .~ Just (TypeScheme Set.empty tVar)) (inferExprA $ EAbs pos x e)
+    s2 <- mgu (apply s1 tVar) (te1^.typeOf)
+    return (s2 <> s1, fEFix (pos, (apply s2 (te1^.typeOf))) n x te1)
+
+inferExpr :: MonadInfer m => PExpr -> m (TSubst, TPExpr)
+inferExpr = cata inferExprA
+
+inferStmtsA :: MonadInfer m => Stmt PExpr -> m (TSubst, [Stmt TPExpr]) -> m (TSubst, [Stmt TPExpr])
+inferStmtsA (SLet pos name expr) cont = do
+    (s1, tExpr) <- inferExpr expr
+    scheme <- local (apply s1) $ generalize (tExpr^.typeOf)
+    (s2, stmts) <- local (apply s1 . (bindings . at name .~ Just scheme)) cont
+    return (s1 <> s2, (SLet pos name tExpr):stmts)
+inferStmtsA (SEval pos expr) cont = do
+    (s1, stmts) <- cont
+    (s2, tExpr) <- local (apply s1) (inferExpr expr)
+    return (s1 <> s2, (SEval pos tExpr):stmts)
+
+inferStmts :: MonadInfer m => [Stmt PExpr] -> m (TSubst, [Stmt TPExpr])
+inferStmts = foldr inferStmtsA (return (mempty, []))
 
 -- Inference monad implementation.
 type Infer a = ExceptT IError (ReaderT IEnv (State IState)) a
 
-runInfer :: Infer a -> Either IError a
-runInfer i = fst $ runState (runReaderT (runExceptT i) initEnv) initState
+runInfer :: Infer a -> Map Name TypeScheme -> Either IError a
+runInfer i b = fst $ runState (runReaderT (runExceptT i) initEnv) initState
     where
-        initEnv = IEnv 
-            { _bindings = Map.singleton "+" (QuantType Set.empty (TFun tInt (TFun tInt tInt)))
+        initEnv = IEnv
+            { _bindings = b
             , _sourcePos = Nothing
             }
-        initState = IState { _tVarCounter = 0 }
+        initState = IState
+            { _tVarCounter = 0
+            }

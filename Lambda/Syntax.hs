@@ -24,7 +24,10 @@ import Data.Functor.Foldable (Fix(..))
 import Lambda.Name
 import Lambda.Type
 
-data Literal = LitChar Char
+-- Literal.
+data Literal = LitUnit
+             | LitBool Bool
+             | LitChar Char
              | LitString Text
              | LitInteger Integer
              | LitDouble Double
@@ -36,6 +39,7 @@ data ExprF a expr = EVar a Name
                   | EAbs a Name expr
                   | EApp a expr expr
                   | ELet a Name expr expr
+                  | EFix a Name Name expr
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
 dataOf :: Lens' (ExprF a e) a
@@ -44,6 +48,7 @@ dataOf f (ELit d l) = ELit <$> (f d) ?? l
 dataOf f (EAbs d n e) = EAbs <$> (f d) ?? n ?? e
 dataOf f (EApp d e1 e2) = EApp <$> (f d) ?? e1 ?? e2
 dataOf f (ELet d n e1 e2) = ELet <$> (f d) ?? n ?? e1 ?? e2
+dataOf f (EFix d n1 n2 e) = EFix <$> (f d) ?? n1 ?? n2 ?? e
 
 unfix :: Lens' (Fix f) (f (Fix f))
 unfix f (Fix x) = Fix <$> (f x)
@@ -63,6 +68,9 @@ fEApp d e1 e2 = Fix $ EApp d e1 e2
 
 fELet :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a) -> Fix (ExprF a)
 fELet d n e1 e2 = Fix $ ELet d n e1 e2
+
+fEFix :: a -> Name -> Name -> Fix (ExprF a) -> Fix (ExprF a)
+fEFix d n1 n2 e = Fix $ EFix d n1 n2 e
 
 -- Lenses.
 class HasPos t where
@@ -87,3 +95,12 @@ instance HasPos TPExpr where
 
 instance HasType TPExpr where
     typeOf = unfix . dataOf . _2
+
+-- Statement.
+data Stmt expr = SLet SourcePos Name expr
+               | SEval SourcePos expr
+    deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance HasPos (Stmt expr) where
+    posOf f (SLet pos n e) = SLet <$> f pos ?? n ?? e
+    posOf f (SEval pos e) = SEval <$> f pos ?? e

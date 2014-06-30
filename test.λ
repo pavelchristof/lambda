@@ -1,23 +1,22 @@
-let a = 42 in
-let b = "string" in
-let id = λx.x in
-    id a;
+let $ = λf.λx.f x;
 
-let a = "string" in
-let b = 42 in
-let wtf = λx.λx.0 in
-let id = λx.x in
-    wtf (id a) (id b) "dupa";
+-- Function composition.
+let . = λf.λg.λx.f (g x);
 
-2 + 5;
+-- Absolute value.
+let abs = λx.
+    if (x >= 0)
+        x
+        (0 - x);
 
-let zero = λf.λx.x in
-let succ = λn.λf.λx.f (n f x) in
-let one = succ zero in
-let two = succ one in
-let three = succ two in
-let plus = λm.λn.λf.λx.m f (n f x) in
-    plus three two;
+-- Fibonacci!
+let rec fib = λx.
+    if (x <= 1)
+        1
+        ((fib (x - 1)) + (fib (x - 2)));
 
-let id = λx.x
-in  λa. (id (+)) a (id a);
+-- Concatenates two lists.
+let rec ++ = λl.λr.
+        if (null l)
+            r
+            ((tail l) ++ ((head l):r));

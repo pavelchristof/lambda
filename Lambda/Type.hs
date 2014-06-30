@@ -30,6 +30,12 @@ data Type = TVar Name
           | TList Type
     deriving (Eq, Ord, Show)
 
+tUnit :: Type
+tUnit = TLit $ Name "()"
+
+tBool :: Type
+tBool = TLit $ Name "Bool"
+
 tChar :: Type
 tChar = TLit $ Name "Char"
 
@@ -40,7 +46,7 @@ tDouble :: Type
 tDouble = TLit $ Name "Double"
 
 -- An universally quantified type.
-data QuantType = QuantType (Set Name) Type
+data TypeScheme = TypeScheme (Set Name) Type
     deriving (Eq, Show)
 
 -- Structures containing free type variables.
@@ -53,8 +59,8 @@ instance HasFreeTVars Type where
     freeTVars f (TFun t1 t2) = TFun <$> freeTVars f t1 <*> freeTVars f t2
     freeTVars f (TList t) = TList <$> freeTVars f t
 
-instance HasFreeTVars QuantType where
-    freeTVars f (QuantType q t) = QuantType q <$> freeTVars f' t
+instance HasFreeTVars TypeScheme where
+    freeTVars f (TypeScheme q t) = TypeScheme q <$> freeTVars f' t
         where f' name
                   | Set.member name q = pure . TVar $ name
                   | otherwise         = f name
