@@ -17,6 +17,7 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
+import Text.Parsec.Pos (SourcePos)
 import Data.String
 import Data.Monoid
 import Data.Text (pack)
@@ -31,9 +32,9 @@ import Lambda.Type
 import Lambda.Syntax
 
 -- Errors.
-data IError = TUnificationError Type Type
-            | TOccursCheckError Name Type
-            | TUnboundVariable Name
+data IError = TUnificationError SourcePos Type Type
+            | TOccursCheckError SourcePos Name Type
+            | TUnboundVariable SourcePos Name
     deriving (Eq, Ord, Show)
 
 -- Inference environment.
@@ -75,24 +76,57 @@ instantiate (QuantType q t) = do
     let subst = TSubst . Map.fromDistinctAscList $ list
     return $ apply subst t
 
-tVarBinding :: MonadInfer m => Name -> Type -> m TSubst
-tVarBinding n t | TVar n == t                     = return mempty
-                | Set.member n (setOfFreeTVars t) = throwError $ TOccursCheckError n t
-                | otherwise                       = return . TSubst $ Map.singleton n t
+-- Position monad.
+type MonadPos m = MonadReader SourcePos m
 
-mgu :: MonadInfer m => Type -> Type -> m TSubst
-mgu (TFun l r) (TFun l' r') = do
-    s1 <- mgu l l'
-    s2 <- mgu (apply s1 r) (apply s1 r')
+withPos :: Monad m => SourcePos -> ReaderT SourcePos m a -> m a
+withPos = flip runReaderT
+
+-- Most general unifier.
+tVarBinding :: MonadInfer m => SourcePos -> Name -> Type -> m TSubst
+tVarBinding pos n t | TVar n == t                     = return mempty
+                    | Set.member n (setOfFreeTVars t) = throwError $ TOccursCheckError pos n t
+                    | otherwise                       = return . TSubst $ Map.singleton n t
+
+mgu :: MonadInfer m => SourcePos -> Type -> Type -> m TSubst
+mgu pos (TFun l r) (TFun l' r') = do
+    s1 <- mgu pos l l'
+    s2 <- mgu pos (apply s1 r) (apply s1 r')
     return $ s1 <> s2
-mgu (TList t1) (TList t2) = mgu t1 t2
-mgu (TVar n) t = tVarBinding n t
-mgu t (TVar n) = tVarBinding n t
-mgu (TLit n1) (TLit n2) = 
+mgu pos (TList t1) (TList t2) = mgu pos t1 t2
+mgu pos (TVar n) t = tVarBinding pos n t
+mgu pos t (TVar n) = tVarBinding pos n t
+mgu pos (TLit n1) (TLit n2) = 
     if n1 == n2 
        then return mempty
-       else throwError $ TUnificationError (TLit n1) (TLit n2)
-mgu t1 t2 = throwError $ TUnificationError t1 t2
+       else throwError $ TUnificationError pos (TLit n1) (TLit n2)
+mgu pos t1 t2 = throwError $ TUnificationError pos t1 t2
+
+-- Inference algebra.
+inferA :: MonadInfer m => PExprF (m (TSubst, TPExpr)) -> m (TSubst, TPExpr)
+inferA (EVar pos n) = do
+    mqt <- view $ bindings . at n
+    case mqt of
+         Just qt -> do
+             t <- instantiate qt
+             return (mempty, fEVar (pos, t) n)
+         Nothing -> throwError $ TUnboundVariable pos n
+inferA (ELit pos lit) = return (mempty, fELit (pos, inferLit lit) lit)
+inferA (EAbs pos n e) = do
+    tVar <- newTVar
+    (s, te) <- local (insertBinding n (QuantType Set.empty tVar)) e
+    return (s, fEAbs (pos, TFun (apply s tVar) (te^.typeOf)) n te)
+inferA (EApp pos e1 e2) = do
+    tVar <- newTVar
+    (s1, te1) <- e1
+    (s2, te2) <- local (apply s1) e2
+    s3 <- mgu pos (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
+    return (s3 <> s2 <> s1, fEApp (pos, apply s3 tVar) te1 te2)
+inferA (ELet pos n e1 e2) = do
+    (s1, te1) <- e1
+    qtype <- local (apply s1) generalize (te1^.typeOf)
+    (s2, te2) <- local (apply s1 . insertBinding n qtype) e2
+    return (s1 <> s2, fELet (pos, te2^.typeOf) n te1 te2)
 
 inferLit :: Literal -> Type
 inferLit (LitChar _) = tChar
@@ -100,33 +134,7 @@ inferLit (LitString _) = TList tChar
 inferLit (LitInteger _) = tInt
 inferLit (LitDouble _) = tDouble
 
--- Inference algebra.
-inferA :: MonadInfer m => UExprF (m (TSubst, TExpr)) -> m (TSubst, TExpr)
-inferA (EVar n) = do
-    mqt <- view $ bindings . at n
-    case mqt of
-         Just qt -> do
-             t <- instantiate qt
-             return (mempty, tEVar t n)
-         Nothing -> throwError $ TUnboundVariable n
-inferA (ELit lit) = return (mempty, tELit (inferLit lit) lit)
-inferA (EAbs n e) = do
-    tVar <- newTVar
-    (s, te) <- local (insertBinding n (QuantType Set.empty tVar)) e
-    return (s, tEAbs (TFun (apply s tVar) (typeOf te)) n te)
-inferA (EApp e1 e2) = do
-    tVar <- newTVar
-    (s1, te1) <- e1
-    (s2, te2) <- local (apply s1) e2
-    s3 <- mgu (apply s2 (typeOf te1)) (TFun (typeOf te2) tVar)
-    return (s3 <> s2 <> s1, tEApp (apply s3 tVar) te1 te2)
-inferA (ELet n e1 e2) = do
-    (s1, te1) <- e1
-    qtype <- local (apply s1) generalize (typeOf te1)
-    (s2, te2) <- local (apply s1 . insertBinding n qtype) e2
-    return (s1 <> s2, tELet (typeOf te2) n te1 te2)
-
-infer :: MonadInfer m => UExpr -> m TExpr
+infer :: MonadInfer m => PExpr -> m TPExpr
 infer expr = do
     (_, t) <- cata inferA expr
     return t

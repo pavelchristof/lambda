@@ -26,7 +26,6 @@ import qualified Data.Text as Text
 
 import Lambda.Name
 import Lambda.Syntax
-import Lambda.Located
 
 lambdaDef = T.LanguageDef
     { T.commentStart    = "{-"
@@ -50,28 +49,36 @@ name = fromString <$> T.identifier lexer
 opName :: Parser Name
 opName = fromString <$> T.operator lexer
 
-located :: Parser a -> Parser (Located a)
-located = (Located <$> getPosition <*>)
-
-variable :: Parser UExpr
-variable = uEVar <$> name
+variable :: Parser PExpr
+variable = fEVar <$> getPosition
+                 <*> name
                  <?> "a variable"
 
-abstraction :: Parser UExpr
-abstraction = uEAbs <$ T.symbol lexer "λ" 
+opVariable :: Parser PExpr
+opVariable = fEVar <$> getPosition
+                   <*> opName
+                   <?> "an operator"
+
+abstraction :: Parser PExpr
+abstraction = fEAbs <$> getPosition 
+                    <* T.symbol lexer "λ" 
                     <*> name
                     <* T.dot lexer
                     <*> expr
                     <?> "an abstraction"
 
-application :: Parser UExpr
-application = foldl' uEApp <$> simpleExpr <*> many1 simpleExpr <?> "an application"
+application :: Parser PExpr
+application = foldl' <$> (fEApp <$> getPosition) <*> simpleExpr <*> many1 simpleExpr <?> "an application"
 
-operator :: Parser UExpr
-operator = uEApp <$> (flip uEApp <$> simpleExpr <*> (uEVar <$> opName)) <*> simpleExpr
+operator :: Parser PExpr
+operator = fEApp <$> getPosition 
+                 <*> (flip <$> (fEApp <$> getPosition) <*> simpleExpr <*> opVariable) 
+                 <*> simpleExpr
+                 <?> "an operator"
 
-letBinding :: Parser UExpr
-letBinding = uELet <$ T.reserved lexer "let"
+letBinding :: Parser PExpr
+letBinding = fELet <$> getPosition
+                   <* T.reserved lexer "let"
                    <*> name
                    <* T.reservedOp lexer "="
                    <*> expr
@@ -79,8 +86,9 @@ letBinding = uELet <$ T.reserved lexer "let"
                    <*> expr
                    <?> "a let binding"
 
-literal :: Parser UExpr
-literal = uELit <$> literal'
+literal :: Parser PExpr
+literal = fELit <$> getPosition
+                <*> literal'
                 <?> "a literal"
     where
         literal' =   (LitChar <$> T.charLiteral lexer)
@@ -88,13 +96,13 @@ literal = uELit <$> literal'
                  <|> (LitInteger <$> T.integer lexer)
                  <|> (LitDouble <$> T.float lexer)
 
-simpleExpr :: Parser UExpr
-simpleExpr =    T.parens lexer (uEVar <$> opName <|> expr)
+simpleExpr :: Parser PExpr
+simpleExpr =    T.parens lexer (opVariable <|> expr)
             <|> literal
             <|> variable
             <?> "a variable, literal or a parenthesed expression"
 
-expr :: Parser UExpr
+expr :: Parser PExpr
 expr =   letBinding 
      <|> abstraction
      <|> try operator
@@ -102,5 +110,5 @@ expr =   letBinding
      <|> simpleExpr
      <?> "an expression"
 
-program :: Parser [UExpr]
+program :: Parser [PExpr]
 program = many (expr <* T.semi lexer)

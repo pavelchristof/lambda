@@ -1,6 +1,6 @@
 {- |
 Module      :  Lambda.PrettyPrint
-Description :  Pretty printing of types and typed expressions.
+Description :  Pretty printing of expressions, types and errors.
 Copyright   :  (c) Paweł Nowak
 License     :  Apache v2.0
 
@@ -15,6 +15,7 @@ module Lambda.PrettyPrint where
 import Data.Text (unpack)
 import Data.Functor.Foldable (Fix(..))
 import Text.PrettyPrint
+import Text.Parsec.Pos
 import Lambda.Name
 import Lambda.Type
 import Lambda.Syntax
@@ -38,15 +39,28 @@ instance PrettyPrint Literal where
     format (LitInteger i) = integer i
     format (LitDouble d) = double d
 
-instance PrettyPrint TExpr where
-    format (Fix (TExpr t (EVar n))) = parens (format n <+> colon <+> format t)
-    format (Fix (TExpr t (ELit lit))) = parens (format lit <+> colon <+> format t)
-    format (Fix (TExpr t (EAbs n e))) = parens ("λ" <> format n <> "." <> format e) <+> colon <+> format t
-    format (Fix (TExpr t (EApp e1 e2))) = parens (format e1 <+> format e2) <+> colon <+> format t
-    format (Fix (TExpr t (ELet n e1 e2))) =   parens (hang ("let" <+> format n <+> "=" <+> format e1 <+> "in") 1 (format e2))
+instance PrettyPrint TPExpr where
+    format (Fix (EVar (_, t) n)) = parens (format n <+> colon <+> format t)
+    format (Fix (ELit (_, t) lit)) = parens (format lit <+> colon <+> format t)
+    format (Fix (EAbs (_, t) n e)) = parens ("λ" <> format n <> "." <> format e) <+> colon <+> format t
+    format (Fix (EApp (_, t) e1 e2)) = parens (format e1 <+> format e2) <+> colon <+> format t
+    format (Fix (ELet (_, t) n e1 e2)) =   parens (hang ("let" <+> format n <+> "=" <+> format e1 <+> "in") 1 (format e2))
                                           <+> colon <+> format t
 
+instance PrettyPrint SourcePos where
+    format pos =  "file" <+> doubleQuotes (text (sourceName pos)) 
+               <> ", line" <+> int (sourceLine pos) 
+               <> ", column" <+> int (sourceColumn pos)
+
+errorAt :: SourcePos -> Doc
+errorAt pos = "Error at" <+> format pos <> "."
+
 instance PrettyPrint IError where
-    format (TUnificationError t1 t2) = "Error: cannot unify" $$ nest 4 ("type:" <+> format t1) $$ nest 4 ("with:" <+> format t2)
-    format (TOccursCheckError n t) = "Error: occurs check failed."
-    format (TUnboundVariable n) = "Error: unbound variable" <+> format n
+    format (TUnificationError pos t1 t2) =  errorAt pos 
+                                         $$ "Cannot unify" 
+                                         $$ nest 4 ("type:" <+> format t1) 
+                                         $$ nest 4 ("with:" <+> format t2)
+    format (TOccursCheckError pos n t) =  errorAt pos
+                                       $$ "Occurs check failed."
+    format (TUnboundVariable pos n) =  errorAt pos
+                                    $$ "Unbound variable" <+> format n

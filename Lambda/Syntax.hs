@@ -1,7 +1,7 @@
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable, FunctionalDependencies #-}
 {- |
 Module      :  Lambda.Syntax
-Description :  
+Description :  AST definition.
 Copyright   :  (c) Paweł Nowak
 License     :  Apache v2.0
 
@@ -13,6 +13,8 @@ Portability :  portable
 
 module Lambda.Syntax where
 
+import Control.Lens
+import Control.Applicative
 import Text.Parsec (SourcePos)
 import Data.Text (Text)
 import Data.Foldable
@@ -21,7 +23,6 @@ import Data.Functor.Foldable (Fix(..))
 
 import Lambda.Name
 import Lambda.Type
-import Lambda.Located
 
 data Literal = LitChar Char
              | LitString Text
@@ -29,78 +30,60 @@ data Literal = LitChar Char
              | LitDouble Double
     deriving (Eq, Show)
 
--- Untyped expression.
-data UExprF expr = EVar Name
-                 | ELit Literal
-                 | EAbs Name expr
-                 | EApp expr expr
-                 | ELet Name expr expr
+-- Expression.
+data ExprF a expr = EVar a Name
+                  | ELit a Literal
+                  | EAbs a Name expr
+                  | EApp a expr expr
+                  | ELet a Name expr expr
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type UExpr = Fix UExprF
+dataOf :: Lens' (ExprF a e) a
+dataOf f (EVar d n) = EVar <$> (f d) ?? n
+dataOf f (ELit d l) = ELit <$> (f d) ?? l
+dataOf f (EAbs d n e) = EAbs <$> (f d) ?? n ?? e
+dataOf f (EApp d e1 e2) = EApp <$> (f d) ?? e1 ?? e2
+dataOf f (ELet d n e1 e2) = ELet <$> (f d) ?? n ?? e1 ?? e2
 
-uEVar :: Name -> UExpr
-uEVar = Fix . EVar
+unfix :: Lens' (Fix f) (f (Fix f))
+unfix f (Fix x) = Fix <$> (f x)
 
-uELit :: Literal -> UExpr
-uELit = Fix . ELit
+-- Constructors that wrap the expression in a Fix.
+fEVar :: a -> Name -> Fix (ExprF a)
+fEVar d n = Fix $ EVar d n
 
-uEAbs :: Name -> UExpr -> UExpr
-uEAbs n e = Fix $ EAbs n e
+fELit :: a -> Literal -> Fix (ExprF a)
+fELit d lit = Fix $ ELit d lit
 
-uEApp :: UExpr -> UExpr -> UExpr
-uEApp e1 e2 = Fix $ EApp e1 e2
+fEAbs :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a)
+fEAbs d n e = Fix $ EAbs d n e
 
-uELet :: Name -> UExpr -> UExpr -> UExpr
-uELet n e1 e2 = Fix $ ELet n e1 e2
+fEApp :: a -> Fix (ExprF a) -> Fix (ExprF a) -> Fix (ExprF a)
+fEApp d e1 e2 = Fix $ EApp d e1 e2
 
--- Located expression.
-data LUExprF expr = LUExpr SourcePos (UExprF expr)
-    deriving (Eq, Show, Functor, Foldable, Traversable)
+fELet :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a) -> Fix (ExprF a)
+fELet d n e1 e2 = Fix $ ELet d n e1 e2
 
-type LUExpr = Fix LUExprF
+-- Lenses.
+class HasPos t where
+    posOf :: Lens' t SourcePos
 
-luEVar :: SourcePos -> Name -> LUExpr
-luEVar p n = Fix (LUExpr p (EVar n))
+class HasType t where
+    typeOf :: Lens' t Type
 
-luELit :: SourcePos -> Literal -> LUExpr
-luELit p lit = Fix (LUExpr p (ELit lit))
+-- Expression with source position.
+type PExprF = ExprF SourcePos
+type PExpr = Fix PExprF
 
-luEAbs :: SourcePos -> Name -> LUExpr -> LUExpr
-luEAbs p n e = Fix (LUExpr p (EAbs n e))
+instance HasPos PExpr where
+    posOf = unfix . dataOf
 
-luEApp :: SourcePos -> LUExpr -> LUExpr -> LUExpr
-luEApp p e1 e2 = Fix (LUExpr p (EApp e1 e2))
+-- Typed, positioned expression.
+type TPExprF = ExprF (SourcePos, Type)
+type TPExpr = Fix TPExprF
 
-luELet :: SourcePos -> Name -> LUExpr -> LUExpr -> LUExpr
-luELet p n e1 e2 = Fix (LUExpr p (ELet n e1 e2))
+instance HasPos TPExpr where
+    posOf = unfix . dataOf . _1
 
--- Typed expression.
-data TExpr' expr = TExpr Type (UExprF expr)
-    deriving (Eq, Show, Functor, Foldable, Traversable)
-
-type TExpr = Fix TExpr'
-
-tEVar :: Type -> Name -> TExpr
-tEVar t n = Fix (TExpr t (EVar n))
-
-tELit :: Type -> Literal -> TExpr
-tELit t lit = Fix (TExpr t (ELit lit))
-
-tEAbs :: Type -> Name -> TExpr -> TExpr
-tEAbs t n e = Fix (TExpr t (EAbs n e))
-
-tEApp :: Type -> TExpr -> TExpr -> TExpr
-tEApp t e1 e2 = Fix (TExpr t (EApp e1 e2))
-
-tELet :: Type -> Name -> TExpr -> TExpr -> TExpr
-tELet t n e1 e2 = Fix (TExpr t (ELet n e1 e2))
-
-typeOf :: TExpr -> Type
-typeOf (Fix (TExpr t _)) = t
-
--- Located expressions.
--- type LUExprF expr = Located (UExprF expr)
--- type LUExpr = Fix LUExprF
--- type LUExpr = Located UExpr
--- type LTExpr = Located TExpr
+instance HasType TPExpr where
+    typeOf = unfix . dataOf . _2

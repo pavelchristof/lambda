@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, Rank2Types #-}
 {- |
 Module      :  Lambda.Type
-Description :  Type.
+Description :  Type definition.
 Copyright   :  (c) Paweł Nowak
 License     :  Apache v2.0
 
