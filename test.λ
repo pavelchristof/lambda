@@ -20,3 +20,6 @@ let rec ++ = λl.λr.
         if (null l)
             r
             ((tail l) ++ ((head l):r));
+
+-- An infinite list of 42.
+let rec a = 42:a;
