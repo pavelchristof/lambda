@@ -40,6 +40,7 @@ data IError = TUnificationError SourcePos Type Type
 -- Inference environment.
 data IEnv = IEnv
     { _bindings :: Map Name QuantType
+    , _sourcePos :: Maybe SourcePos
     }
 makeLenses ''IEnv
 
@@ -76,31 +77,31 @@ instantiate (QuantType q t) = do
     let subst = TSubst . Map.fromDistinctAscList $ list
     return $ apply subst t
 
--- Position monad.
-type MonadPos m = MonadReader SourcePos m
-
-withPos :: Monad m => SourcePos -> ReaderT SourcePos m a -> m a
-withPos = flip runReaderT
-
 -- Most general unifier.
-tVarBinding :: MonadInfer m => SourcePos -> Name -> Type -> m TSubst
-tVarBinding pos n t | TVar n == t                     = return mempty
-                    | Set.member n (setOfFreeTVars t) = throwError $ TOccursCheckError pos n t
-                    | otherwise                       = return . TSubst $ Map.singleton n t
+tVarBinding :: MonadInfer m => Name -> Type -> m TSubst
+tVarBinding n t | TVar n == t                     = return mempty
+                | Set.member n (setOfFreeTVars t) = do
+                    Just pos <- view sourcePos
+                    throwError $ TOccursCheckError pos n t
+                | otherwise                       = return . TSubst $ Map.singleton n t
 
-mgu :: MonadInfer m => SourcePos -> Type -> Type -> m TSubst
-mgu pos (TFun l r) (TFun l' r') = do
-    s1 <- mgu pos l l'
-    s2 <- mgu pos (apply s1 r) (apply s1 r')
+mgu :: MonadInfer m => Type -> Type -> m TSubst
+mgu (TFun l r) (TFun l' r') = do
+    s1 <- mgu l l'
+    s2 <- mgu (apply s1 r) (apply s1 r')
     return $ s1 <> s2
-mgu pos (TList t1) (TList t2) = mgu pos t1 t2
-mgu pos (TVar n) t = tVarBinding pos n t
-mgu pos t (TVar n) = tVarBinding pos n t
-mgu pos (TLit n1) (TLit n2) = 
+mgu (TList t1) (TList t2) = mgu t1 t2
+mgu (TVar n) t = tVarBinding n t
+mgu t (TVar n) = tVarBinding n t
+mgu (TLit n1) (TLit n2) = 
     if n1 == n2 
        then return mempty
-       else throwError $ TUnificationError pos (TLit n1) (TLit n2)
-mgu pos t1 t2 = throwError $ TUnificationError pos t1 t2
+       else do
+           Just pos <- view sourcePos
+           throwError $ TUnificationError pos (TLit n1) (TLit n2)
+mgu t1 t2 = do
+    Just pos <- view sourcePos
+    throwError $ TUnificationError pos t1 t2
 
 -- Inference algebra.
 inferA :: MonadInfer m => PExprF (m (TSubst, TPExpr)) -> m (TSubst, TPExpr)
@@ -120,7 +121,7 @@ inferA (EApp pos e1 e2) = do
     tVar <- newTVar
     (s1, te1) <- e1
     (s2, te2) <- local (apply s1) e2
-    s3 <- mgu pos (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
+    s3 <- local (sourcePos .~ Just pos) $ mgu (apply s2 (te1^.typeOf)) (TFun (te2^.typeOf) tVar)
     return (s3 <> s2 <> s1, fEApp (pos, apply s3 tVar) te1 te2)
 inferA (ELet pos n e1 e2) = do
     (s1, te1) <- e1
@@ -145,5 +146,8 @@ type Infer a = ExceptT IError (ReaderT IEnv (State IState)) a
 runInfer :: Infer a -> Either IError a
 runInfer i = fst $ runState (runReaderT (runExceptT i) initEnv) initState
     where
-        initEnv = IEnv { _bindings = Map.singleton "+" (QuantType Set.empty (TFun tInt (TFun tInt tInt))) }
+        initEnv = IEnv 
+            { _bindings = Map.singleton "+" (QuantType Set.empty (TFun tInt (TFun tInt tInt)))
+            , _sourcePos = Nothing
+            }
         initState = IState { _tVarCounter = 0 }
