@@ -12,11 +12,12 @@ Portability :  portable
 
 module Lambda.Name where
 
+import Data.String
 import Data.Text (Text, pack)
 
 -- Use a simple text for now.
 newtype Name = Name Text
     deriving (Eq, Ord, Show, Read)
 
-fromString :: String -> Name
-fromString = Name . pack
+instance IsString Name where
+    fromString = Name . pack

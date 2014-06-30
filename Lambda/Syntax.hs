@@ -30,14 +30,14 @@ data Literal = LitChar Char
     deriving (Eq, Show)
 
 -- Untyped expression.
-data UExpr' expr = EVar Name
+data UExprF expr = EVar Name
                  | ELit Literal
                  | EAbs Name expr
                  | EApp expr expr
                  | ELet Name expr expr
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type UExpr = Fix UExpr'
+type UExpr = Fix UExprF
 
 uEVar :: Name -> UExpr
 uEVar = Fix . EVar
@@ -55,10 +55,10 @@ uELet :: Name -> UExpr -> UExpr -> UExpr
 uELet n e1 e2 = Fix $ ELet n e1 e2
 
 -- Located expression.
-data LUExpr' expr = LUExpr SourcePos (UExpr' expr)
+data LUExprF expr = LUExpr SourcePos (UExprF expr)
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type LUExpr = Fix LUExpr'
+type LUExpr = Fix LUExprF
 
 luEVar :: SourcePos -> Name -> LUExpr
 luEVar p n = Fix (LUExpr p (EVar n))
@@ -76,7 +76,7 @@ luELet :: SourcePos -> Name -> LUExpr -> LUExpr -> LUExpr
 luELet p n e1 e2 = Fix (LUExpr p (ELet n e1 e2))
 
 -- Typed expression.
-data TExpr' expr = TExpr Type (UExpr' expr)
+data TExpr' expr = TExpr Type (UExprF expr)
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
 type TExpr = Fix TExpr'
@@ -100,7 +100,7 @@ typeOf :: TExpr -> Type
 typeOf (Fix (TExpr t _)) = t
 
 -- Located expressions.
--- type LUExpr' expr = Located (UExpr' expr)
--- type LUExpr = Fix LUExpr'
+-- type LUExprF expr = Located (UExprF expr)
+-- type LUExpr = Fix LUExprF
 -- type LUExpr = Located UExpr
 -- type LTExpr = Located TExpr

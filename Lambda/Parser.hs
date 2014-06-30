@@ -14,6 +14,7 @@ module Lambda.Parser where
 
 import Prelude hiding (takeWhile)
 import Control.Applicative hiding ((<|>), many)
+import Data.String
 import Data.List (foldl')
 import Data.Text (Text, pack)
 import Data.Functor.Foldable
@@ -96,8 +97,8 @@ simpleExpr =    T.parens lexer (uEVar <$> opName <|> expr)
 expr :: Parser UExpr
 expr =   letBinding 
      <|> abstraction
-     <|> try application
      <|> try operator
+     <|> try application
      <|> simpleExpr
      <?> "an expression"
 

@@ -17,6 +17,7 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.String
 import Data.Monoid
 import Data.Text (pack)
 import Data.Map (Map)
@@ -100,7 +101,7 @@ inferLit (LitInteger _) = tInt
 inferLit (LitDouble _) = tDouble
 
 -- Inference algebra.
-inferA :: MonadInfer m => UExpr' (m (TSubst, TExpr)) -> m (TSubst, TExpr)
+inferA :: MonadInfer m => UExprF (m (TSubst, TExpr)) -> m (TSubst, TExpr)
 inferA (EVar n) = do
     mqt <- view $ bindings . at n
     case mqt of
@@ -136,5 +137,5 @@ type Infer a = ExceptT IError (ReaderT IEnv (State IState)) a
 runInfer :: Infer a -> Either IError a
 runInfer i = fst $ runState (runReaderT (runExceptT i) initEnv) initState
     where
-        initEnv = IEnv { _bindings = Map.empty }
+        initEnv = IEnv { _bindings = Map.singleton "+" (QuantType Set.empty (TFun tInt (TFun tInt tInt))) }
         initState = IState { _tVarCounter = 0 }
