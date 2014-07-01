@@ -22,9 +22,6 @@ let rec ++ = λl.λr.
             r
             ((tail l) ++ ((head l):r));
 
--- An infinite list of 42.
-let rec a = 42:a;
-
 -- Right fold.
 let foldr = λk.λz.
     let rec go = λl.
@@ -43,6 +40,26 @@ let indexOf = λe.
     in  indexOf' 0;
 let strToInt = foldr (λc.λn. (10*n) + (indexOf c digits)) 0;
 
-printInt $ head a;
-printStr $ head $ ["abc", "def"];
-printInt ((strToInt . head) ["a list", "of strings"]);
+-- Sum elements of a list while converting strings to ints.
+printInt $ foldr (λe.((+) (strToInt e))) 0 (["123", "543"] ++ ["42", "18"]);
+
+-- Fixed-point combinator.
+let fix = λf.
+    let rec x = f x
+    in  x;
+    
+let alwaysFive = λx.5;
+printInt (fix alwaysFive);
+
+-- Top level expressions are evaluated to WHNF form. 
+-- These numbers won't be printed due to laziness.
+[printInt 123, printInt 543];
+
+-- seq can be used to force objects to be evaulted to WHNF form.
+let list = [seq (printStr "Hello world!\n") ()]
+in  head list;
+
+-- The same with no seq.
+let noseq = λx.λy.y;
+let list = [noseq (printStr "Goodbye world!\n") ()]
+in  head list;

@@ -16,8 +16,10 @@ import Data.Text (unpack)
 import Data.Functor.Foldable (Fix(..))
 import Text.PrettyPrint
 import Text.Parsec.Pos
+
 import Lambda.Name
 import Lambda.Type
+import Lambda.Object
 import Lambda.Syntax
 import Lambda.Inference
 
@@ -90,3 +92,17 @@ instance PrettyPrint IError where
                                    $$ "Unbound variable" <+> doubleQuotes (format n) <> "."
     format (Redefinition pos n) =  errorAt pos
                                 $$ "Redefined" <+> doubleQuotes (format n) <> "."
+
+instance PrettyPrint (Object e) where
+    format (OFun _) = braces "fun"
+    format (OThunk l r) = braces ("thunk" <+> format l <+> format r)
+    format (OSeq l r) = braces ("seq" <+> format l <+> format r)
+    format OUnit = "()"
+    format (OChar c) = quotes (char c)
+    format (OInt i) = int i
+    format (ODouble d) = double d
+    format (OList list) = brackets (hcat . punctuate "," . map format $ list)
+
+instance PrettyPrint (Either String (Object e)) where
+    format (Left msg) = "_|_"
+    format (Right obj) = format obj

@@ -3,7 +3,7 @@
 
 name:                lambda
 version:             0.1.0.0
-synopsis:            A compiler for a toy function language based on the Hindley–Milner type system.
+synopsis:            An interpreter for a toy function language based on the Hindley–Milner type system.
 -- description:         
 license:             Apache-2.0
 license-file:        LICENSE
@@ -17,7 +17,7 @@ cabal-version:       >=1.10
 
 executable lambda
   main-is:             Main.hs
-  other-modules:       Lambda.Name, Lambda.Type, Lambda.Syntax, Lambda.Parser, Lambda.Inference, Lambda.PrettyPrint
+  other-modules:       
   other-extensions:    TemplateHaskell
   build-depends:       base, parsec, text, recursion-schemes, lens, mtl, containers, transformers, pretty, 
                        optparse-applicative

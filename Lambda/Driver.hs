@@ -15,54 +15,32 @@ module Lambda.Driver where
 
 import System.IO
 import Control.Lens
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Cont
 import Control.Monad.IO.Class
 import Data.Text (Text)
 import Text.Parsec (parse)
 import Text.PrettyPrint (render)
+import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
-import qualified Data.Map as Map
-import qualified Data.Set as Set
 
 import Lambda.Name
 import Lambda.Type
 import Lambda.Syntax
 import Lambda.Parser
+import Lambda.PrimOp
 import Lambda.Inference
+import Lambda.Object
+import Lambda.ObjGen
+import Lambda.Eval
 import Lambda.PrettyPrint
-
--- | Initial bindings. TODO: move that to Prim.
-initBindings = Map.fromList
-    -- Integers
-    [ ("+", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    , ("-", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    , ("/", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    , ("*", TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    , ("<", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
-    , ("<=", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
-    , (">", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
-    , (">=", TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
-
-    -- Control flow.
-    , ("==", TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TVar "a") tBool)))
-    , ("if", TypeScheme (Set.singleton "a") (TFun tBool (TFun (TVar "a") (TFun (TVar "a") (TVar "a")))))
-
-    -- Lists.
-    , (":", TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TList (TVar "a")) (TList (TVar "a")))))
-    , ("head", TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) (TVar "a")))
-    , ("tail", TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) (TList (TVar "a"))))
-    , ("null", TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) tBool))
-
-    -- IO.
-    , ("printInt", TypeScheme Set.empty (TFun tInt tUnit))
-    , ("printStr", TypeScheme Set.empty (TFun (TList tChar) tUnit))
-    ]
 
 -- | Driver targets.
 data Target = DumpAST
             | DumpTypedAST
+            | Evaluate
     deriving (Eq, Show, Read, Bounded, Enum)
 
 -- | Driver configuration.
@@ -125,6 +103,24 @@ inferTypes stmts = ContT $ \cont ->
              if target' == DumpTypedAST
                 then printOutput $ typedStmts
                 else cont typedStmts
+    where 
+        initBindings = Map.fromList $ map extractBinding (primOps :: [PrimOp Eval])
+        extractBinding (PrimOp n s _) = (n, s)
+
+-- | Generates objects from a typed AST.
+genObjs :: MonadDriver m => [Stmt TPExpr] -> ContT () m (LObject Eval)
+genObjs stmts = return $ runObjGen (objGenStmts stmts) initBindings
+    where
+        initBindings = Map.fromList $ map extractBinding (primOps :: [PrimOp Eval])
+        extractBinding (PrimOp n _ o) = (n, o)
+
+-- | Evaluate the object.
+evalObj :: MonadDriver m => LObject Eval -> ContT () m ()
+evalObj obj = do
+    r <- liftIO $ runEval (eval obj)
+    case r of
+         Left err -> liftIO $ putStrLn ("Error: " ++ err)
+         Right _ -> return ()
 
 driver :: MonadDriver m => m ()
-driver = runContT (readInput >>= parseInput >>= inferTypes) (return . return ())
+driver = runContT (readInput >>= parseInput >>= inferTypes >>= genObjs >>= evalObj) (return . return ())

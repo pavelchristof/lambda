@@ -45,6 +45,9 @@ tInt = TLit $ Name "Int"
 tDouble :: Type
 tDouble = TLit $ Name "Double"
 
+tString :: Type
+tString = TList tChar
+
 -- An universally quantified type.
 data TypeScheme = TypeScheme (Set Name) Type
     deriving (Eq, Show)

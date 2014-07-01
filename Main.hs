@@ -17,7 +17,7 @@ config = Config
              <> long "target" 
              <> help "Compiler target." 
              <> metavar "TARGET" 
-             <> value DumpTypedAST 
+             <> value Evaluate 
              <> showDefault
              <> completeWith (map show $ enumFrom (minBound :: Target))
              )
@@ -26,5 +26,5 @@ main :: IO ()
 main = execParser opts >>= runDriver driver
     where opts = info (helper <*> config)
                       (  fullDesc
-                      <> progDesc "Lambda compiler."
+                      <> progDesc "Lambda interpreter."
                       )

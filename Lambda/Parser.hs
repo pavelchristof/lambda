@@ -10,7 +10,9 @@ Portability :  portable
 
 -}
 
-module Lambda.Parser where
+module Lambda.Parser
+    ( program
+    ) where
 
 import Control.Lens ((^.))
 import Control.Applicative hiding ((<|>), many)
@@ -163,8 +165,8 @@ eval = SEval <$> getPosition
 
 stmt :: Parser (Stmt PExpr)
 stmt =   letRecStmt
+     <|> try eval
      <|> letStmt
-     <|> eval
 
 program :: Parser [Stmt PExpr]
 program = T.whiteSpace lexer *> many (stmt <* T.semi lexer)
