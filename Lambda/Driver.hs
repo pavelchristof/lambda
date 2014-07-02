@@ -14,7 +14,7 @@ Portability :  portable
 module Lambda.Driver where
 
 import System.IO
-import Control.Lens
+import Control.Lens hiding (Action)
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Cont
@@ -39,8 +39,9 @@ import Lambda.Eval
 import Lambda.PrettyPrint
 
 -- | Driver targets.
-data Target = DumpAST
+data Action = DumpAST
             | DumpTypedAST
+            | DumpObject
             | Evaluate
     deriving (Eq, Show, Read, Bounded, Enum)
 
@@ -48,7 +49,7 @@ data Target = DumpAST
 data Config = Config
     { _input :: Maybe FilePath
     , _output :: Maybe FilePath
-    , _target :: Target
+    , _target :: Action
     }
 makeLenses ''Config
 
@@ -80,12 +81,12 @@ readInput = do
              return (text, "standard input")
 
 -- | Prints something to the output.
-printOutput :: (MonadDriver m, PrettyPrint t) => t -> m ()
+printOutput :: MonadDriver m => String -> m ()
 printOutput t = do
     output' <- view output
     case output' of
-         Just fileName -> liftIO . writeFile fileName . render . format $ t
-         Nothing -> liftIO . hPutStr stderr . render . format $ t
+         Just fileName -> liftIO . writeFile fileName $ t
+         Nothing -> liftIO . hPutStr stderr $ t
 
 -- | Parses the input.
 parseInput :: MonadDriver m => (Text, FilePath) -> ContT () m [Stmt PExpr]
@@ -95,7 +96,7 @@ parseInput (text, filePath) = ContT $ \cont ->
          Right stmts -> do
              target' <- view target
              if target' == DumpAST
-                then printOutput $ stmts
+                then printOutput . render . format $ stmts
                 else cont stmts
 
 -- | Transforms untyped AST into typed AST.
@@ -106,7 +107,7 @@ inferTypes stmts = ContT $ \cont ->
          Right (_, typedStmts) -> do
              target' <- view target
              if target' == DumpTypedAST
-                then printOutput $ typedStmts
+                then printOutput . render . format $ typedStmts
                 else cont typedStmts
     where 
         initBindings = Map.fromList $ map extractBinding (primOps :: [PrimOp Eval])
@@ -123,14 +124,19 @@ genObjs stmts = ContT $ \cont -> do
          Left err -> printErrorStr ("Internal error during PrimOps initialization: " ++ err)
          Right binds -> do
              obj <- liftIO $ runObjGen (objGenStmts stmts) binds
-             cont obj
+             target' <- view target
+             if target' == DumpObject
+                then do
+                    doc <- liftIO $ formatIO obj
+                    printOutput $ render doc
+                else cont obj
 
 -- | Evaluate the object.
 evalObj :: MonadDriver m => LObject Eval -> ContT () m ()
 evalObj obj = do
     r <- liftIO $ runEval (eval obj)
     case r of
-         Left err -> liftIO $ putStrLn ("Error: " ++ err)
+         Left err -> printOutput ("Error: " ++ err)
          Right _ -> return ()
 
 driver :: MonadDriver m => m ()

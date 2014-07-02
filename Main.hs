@@ -13,13 +13,13 @@ config = Config
              <> metavar "FILE"
              )
      <*> option
-             (  short 't' 
-             <> long "target" 
-             <> help "Compiler target." 
-             <> metavar "TARGET" 
+             (  short 'a' 
+             <> long "action" 
+             <> help "Compiler action." 
+             <> metavar "ACTION" 
              <> value Evaluate 
              <> showDefault
-             <> completeWith (map show $ enumFrom (minBound :: Target))
+             <> completeWith (map show $ enumFrom (minBound :: Action))
              )
 
 main :: IO ()
