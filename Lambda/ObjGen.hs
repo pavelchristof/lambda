@@ -61,15 +61,15 @@ objGenExprA (EVar _ name) = do
     return obj
 objGenExprA (ELit _ lit) = do
     obj <- objGenLiteral lit
-    liftIO . newIORef . Right $ obj
+    newObj obj
 objGenExprA (EAbs _ name body) = do
     b <- view bindings
-    liftIO $ newIORef . Right . OFun $ \obj ->
+    newObj . OFun $ \obj ->
         liftIO $ runObjGen body (Map.insert name obj b)
 objGenExprA (EApp _ f x) = do
     fObj <- f
     xObj <- x
-    liftIO $ newIORef . Right $ OThunk fObj xObj
+    newObj $ OThunk fObj xObj
 objGenExprA (ELet _ name f g) = do
     fObj <- f
     local (bindings . at name .~ Just fObj) g
@@ -89,8 +89,8 @@ objGenStmtsA (SLet _ name f) g = do
 objGenStmtsA (SEval _ f) g = do
     fObj <- objGenExpr f
     gObj <- g
-    liftIO . newIORef . Right $ OSeq fObj gObj
+    newObj $ OSeq fObj gObj
 
 -- | Generates an object from a list of statements.
 objGenStmts :: MonadIO e => [Stmt TPExpr] -> ObjGen e (LObject e)
-objGenStmts = foldr objGenStmtsA (liftIO . newIORef . Right $ OUnit)
+objGenStmts = foldr objGenStmtsA (newObj OUnit)

@@ -123,6 +123,7 @@ genObjs stmts = ContT $ \cont -> do
     case res of
          Left err -> printErrorStr ("Internal error during PrimOps initialization: " ++ err)
          Right binds -> do
+             -- Generate the objects.
              obj <- liftIO $ runObjGen (objGenStmts stmts) binds
              target' <- view target
              if target' == DumpObject

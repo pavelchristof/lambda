@@ -4,6 +4,9 @@ let $ = λf.λx.f x;
 -- Function composition.
 let . = λf.λg.λx.f (g x);
 
+-- Flips arguments of a function.
+let flip = λf.λx.λy.f y x;
+
 -- Absolute value.
 let abs = λx.
     if (x >= 0)
@@ -16,19 +19,16 @@ let rec fib = λx.
         1
         ((fib (x - 1)) + (fib (x - 2)));
 
--- Concatenates two lists.
-let rec ++ = λl.λr.
-        if (null l)
-            r
-            ((tail l) ++ ((head l):r));
-
--- Right fold.
+-- Right fold on a list.
 let foldr = λk.λz.
     let rec go = λl.
         if (null l)
             z
             (k (head l) (go (tail l)))
     in go;
+
+-- Concatenates two lists.
+let ++ = flip $ foldr (:);
 
 -- String to int conversion.
 let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];

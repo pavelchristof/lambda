@@ -147,6 +147,9 @@ inferExpr = cata inferExprA
 
 inferStmtsA :: MonadInfer m => Stmt PExpr -> m (TSubst, [Stmt TPExpr]) -> m (TSubst, [Stmt TPExpr])
 inferStmtsA (SLet pos x f) g = do
+    binds <- view bindings
+    when (Map.member x binds) $ 
+        throwError $ Redefinition pos x
     (s1, f') <- inferExpr f
     (s2, g') <- local (apply s1) $ do
         r <- generalize (f'^.typeOf)

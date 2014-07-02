@@ -33,14 +33,6 @@ debugPrint m = do
     liftIO . putStrLn . render . format $ val
     return val
 
--- | Creates a new bottom.
-newBot :: MonadIO m => String -> m (LObject m)
-newBot s = liftIO $ newIORef $ Left $ s
-
--- | Creates a new object.
-newObj :: MonadIO m => Object m -> m (LObject m)
-newObj o = liftIO $ newIORef $ Right $ o
-
 -- | Undefined value, that is bottom.
 primUndefined :: MonadEval m => PrimOp m
 primUndefined = PrimOp "undefined"
@@ -128,8 +120,8 @@ primIf = PrimOp "if"
                    else return el)
 
 -- List functions.
-primPrepend :: MonadEval m => PrimOp m
-primPrepend = PrimOp ":"
+primCons :: MonadEval m => PrimOp m
+primCons = PrimOp ":"
     (TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TList (TVar "a")) (TList (TVar "a")))))
     (newObj . OFun $ \el ->
         newObj . OFun $ \list -> do
@@ -194,7 +186,7 @@ primOps =
     , primGtEq
     , primEq
     , primIf
-    , primPrepend
+    , primCons
     , primHead
     , primTail
     , primNull
