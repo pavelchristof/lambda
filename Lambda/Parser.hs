@@ -165,8 +165,8 @@ eval = SEval <$> getPosition
              <*> expr
 
 stmt :: Parser (Stmt PExpr)
-stmt =   letRecStmt
-     <|> try eval
+stmt =   try eval
+     <|> letRecStmt
      <|> letStmt
 
 program :: Parser [Stmt PExpr]

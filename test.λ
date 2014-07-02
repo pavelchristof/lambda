@@ -64,6 +64,6 @@ let noseq = λx.λy.y;
 let list = [noseq (printStr "Goodbye world!\n") ()]
 in  head list;
 
--- This prints "test" only once, because the thunk gets replace once it's evaluated.
+-- This prints "test" only once, because the thunk gets replaced once it's evaluated.
 let x = seq (printStr "test") 3 
 in  x + x;
