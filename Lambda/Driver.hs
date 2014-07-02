@@ -25,6 +25,7 @@ import Text.PrettyPrint (render)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
+import qualified Data.Traversable as Tr
 
 import Lambda.Name
 import Lambda.Type
@@ -61,6 +62,10 @@ runDriver = runReaderT
 -- | Prints an error to stderr.
 printError :: (MonadIO m, PrettyPrint t) => t -> m ()
 printError = liftIO . hPutStr stderr . render . format
+
+-- | Prints an error string to stderr.
+printErrorStr :: MonadIO m => String -> m ()
+printErrorStr = liftIO . hPutStr stderr
 
 -- | Reads the input, either from file or from stdin.
 readInput :: MonadDriver m => ContT () m (Text, FilePath)
@@ -109,10 +114,16 @@ inferTypes stmts = ContT $ \cont ->
 
 -- | Generates objects from a typed AST.
 genObjs :: MonadDriver m => [Stmt TPExpr] -> ContT () m (LObject Eval)
-genObjs stmts = return $ runObjGen (objGenStmts stmts) initBindings
-    where
-        initBindings = Map.fromList $ map extractBinding (primOps :: [PrimOp Eval])
-        extractBinding (PrimOp n _ o) = (n, o)
+genObjs stmts = ContT $ \cont -> do
+    -- Initialize PrimOps.
+    let primOpsMap = Map.fromList (map (\(PrimOp n _ o) -> (n, o)) (primOps :: [PrimOp Eval]))
+        instPrimOps = Tr.sequence primOpsMap
+    res <- liftIO $ runEval instPrimOps
+    case res of
+         Left err -> printErrorStr ("Internal error during PrimOps initialization: " ++ err)
+         Right binds -> do
+             obj <- liftIO $ runObjGen (objGenStmts stmts) binds
+             cont obj
 
 -- | Evaluate the object.
 evalObj :: MonadDriver m => LObject Eval -> ContT () m ()

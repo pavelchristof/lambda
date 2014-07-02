@@ -13,6 +13,8 @@ Portability :  portable
  
 module Lambda.Object where
 
+import Data.IORef
+
 -- | An unflited object.
 data Object m = OFun ((LObject m) -> m (LObject m))
               | OThunk (LObject m) (LObject m)
@@ -25,4 +27,4 @@ data Object m = OFun ((LObject m) -> m (LObject m))
               | OList [LObject m]
 
 -- | A lifted object. Bottom is represented as Left.
-type LObject m = Either String (Object m)
+type LObject m = IORef (Either String (Object m))

@@ -12,6 +12,7 @@ Portability :  portable
  
 module Lambda.PrettyPrint where
 
+import Data.IORef
 import Data.Text (unpack)
 import Data.Functor.Foldable (Fix(..))
 import Text.PrettyPrint
@@ -93,16 +94,30 @@ instance PrettyPrint IError where
     format (Redefinition pos n) =  errorAt pos
                                 $$ "Redefined" <+> doubleQuotes (format n) <> "."
 
-instance PrettyPrint (Object e) where
-    format (OFun _) = braces "fun"
-    format (OThunk l r) = braces ("thunk" <+> format l <+> format r)
-    format (OSeq l r) = braces ("seq" <+> format l <+> format r)
-    format OUnit = "()"
-    format (OChar c) = quotes (char c)
-    format (OInt i) = int i
-    format (ODouble d) = double d
-    format (OList list) = brackets (hcat . punctuate "," . map format $ list)
+class PrettyPrintIO t where
+    formatIO :: t -> IO Doc
 
-instance PrettyPrint (Either String (Object e)) where
-    format (Left msg) = "_|_"
-    format (Right obj) = format obj
+instance PrettyPrintIO (Object e) where
+    formatIO (OFun _) = return $ braces "fun"
+    formatIO (OThunk l r) = do
+        l' <- formatIO l
+        r' <- formatIO r
+        return $ braces ("thunk" <+> l' <+> r')
+    formatIO (OSeq l r) = do
+        l' <- formatIO l
+        r' <- formatIO r
+        return $ braces ("seq" <+> l' <+> r')
+    formatIO OUnit = return "()"
+    formatIO (OChar c) = return $ quotes (char c)
+    formatIO (OInt i) = return $ int i
+    formatIO (ODouble d) = return $ double d
+    formatIO (OList list) = do
+        list' <- mapM formatIO list
+        return $ brackets (hcat . punctuate "," $ list')
+
+instance PrettyPrintIO (LObject e) where
+    formatIO ref = do
+        obj <- readIORef ref
+        case obj of
+             Left _ -> return "_|_"
+             Right obj' -> formatIO obj'

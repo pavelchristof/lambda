@@ -112,8 +112,9 @@ literal = fELit <$> getPosition
         literal' =   (LitChar <$> T.charLiteral lexer)
                  <|> (LitBool <$> (T.reserved lexer "True" *> pure True <|> T.reserved lexer "False" *> pure False))
                  <|> (LitString . pack <$> T.stringLiteral lexer)
-                 <|> (LitInteger <$> T.integer lexer)
-                 <|> (LitDouble <$> T.float lexer)
+                 <|> (intOrDouble <$> T.naturalOrFloat lexer)
+        intOrDouble (Left i) = LitInteger i
+        intOrDouble (Right f) = LitDouble f
 
 list :: Parser PExpr
 list = do

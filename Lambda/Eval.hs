@@ -13,6 +13,7 @@ Portability :  portable
 
 module Lambda.Eval where
 
+import Data.IORef
 import Control.Monad.Except
 import Control.Monad.IO.Class
 
@@ -30,15 +31,20 @@ runEval = runExceptT
 
 -- | Evaluates an object to weak head normal form.
 eval :: MonadEval m => LObject m -> m (Object m)
-eval (Left msg) = throwError msg
-eval (Right (OThunk f x)) = do
-    OFun f' <- eval f
-    r <- f' x
-    eval r
-eval (Right (OSeq f g)) = do
-    f' <- eval f
-    eval g
-eval (Right obj) = return obj
+eval ref = do
+    obj <- liftIO $ readIORef ref
+    case obj of
+         Left msg -> throwError msg
+         Right (OThunk f x) -> do
+             OFun f' <- eval f
+             r <- f' x
+             r' <- eval r
+             liftIO $ writeIORef ref (Right r')
+             return r'
+         Right (OSeq f g) -> do
+             eval f
+             eval g
+         Right obj -> return obj
 
 -- | Compares two objects. This is a partial function. Only primitive types are comparable.
 -- A primitive type is either:

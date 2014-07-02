@@ -13,6 +13,7 @@ Portability :  portable
 
 module Lambda.PrimOp where
 
+import Data.IORef
 import Text.PrettyPrint (render)
 import Control.Monad.IO.Class
 import qualified Data.Map as Map
@@ -24,7 +25,7 @@ import Lambda.Object
 import Lambda.Eval
 import Lambda.PrettyPrint
 
-data PrimOp m = PrimOp Name TypeScheme (LObject m)
+data PrimOp m = PrimOp Name TypeScheme (m (LObject m))
 
 debugPrint :: (PrettyPrint a, MonadEval m) => m a -> m a
 debugPrint m = do
@@ -32,46 +33,54 @@ debugPrint m = do
     liftIO . putStrLn . render . format $ val
     return val
 
+-- | Creates a new bottom.
+newBot :: MonadIO m => String -> m (LObject m)
+newBot s = liftIO $ newIORef $ Left $ s
+
+-- | Creates a new object.
+newObj :: MonadIO m => Object m -> m (LObject m)
+newObj o = liftIO $ newIORef $ Right $ o
+
 -- | Undefined value, that is bottom.
 primUndefined :: MonadEval m => PrimOp m
 primUndefined = PrimOp "undefined"
     (TypeScheme (Set.singleton "a") (TVar "a"))
-    (Left "undefined")
+    (newBot "undefined")
 
 -- | Error, that is bottom with a message.
 primError :: MonadEval m => PrimOp m
 primError = PrimOp "error"
     (TypeScheme (Set.singleton "a") (TFun tString (TVar "a")))
-    (Right . OFun $ \x -> do
+    (newObj . OFun $ \x -> do
         msg <- evalStr x
-        return . Left $ msg)
+        newBot msg)
 
 primSeq :: MonadEval m => PrimOp m
 primSeq = PrimOp "seq"
     (TypeScheme (Set.fromList ["a", "b"]) (TFun (TVar "a") (TFun (TVar "b") (TVar "b"))))
-    (Right . OFun $ \x -> do
-        return . Right . OFun $ \y -> do
-            return . Right $ OSeq x y)
+    (newObj . OFun $ \x -> do
+        newObj . OFun $ \y -> do
+            newObj $ OSeq x y)
 
 -- | Lifts a haskell binary function operating on Int's into a PrimOp.
 liftIntOp :: MonadEval m => Name -> (Int -> Int -> Int) -> PrimOp m
 liftIntOp name op = PrimOp name
     (TypeScheme Set.empty (TFun tInt (TFun tInt tInt)))
-    (Right . OFun $ \x -> do
-        return . Right . OFun $ \y -> do
+    (newObj . OFun $ \x -> do
+        newObj . OFun $ \y -> do
             OInt x' <- eval x
             OInt y' <- eval y
-            return . Right . OInt $ (x' `op` y'))
+            newObj . OInt $ (x' `op` y'))
 
 -- | Lifts a haskell binary predicate operating on Int's into a PrimOp.
 liftIntPred :: MonadEval m => Name -> (Int -> Int -> Bool) -> PrimOp m
 liftIntPred name op = PrimOp name
     (TypeScheme Set.empty (TFun tInt (TFun tInt tBool)))
-    (Right . OFun $ \x -> do
-        return . Right . OFun $ \y -> do
+    (newObj . OFun $ \x -> do
+        newObj . OFun $ \y -> do
             OInt x' <- eval x
             OInt y' <- eval y
-            return . Right . OBool $ (x' `op` y'))
+            newObj . OBool $ (x' `op` y'))
 
 -- Int operators.
 primAdd :: MonadEval m => PrimOp m
@@ -102,17 +111,17 @@ primGtEq = liftIntPred ">=" (>=)
 primEq :: MonadEval m => PrimOp m
 primEq = PrimOp "=="
     (TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TVar "a") tBool)))
-    (Right . OFun $ \a ->
-        return . Right . OFun $ \b ->
-            objEq a b >>= return . Right . OBool)
+    (newObj . OFun $ \a ->
+        newObj . OFun $ \b ->
+            objEq a b >>= newObj . OBool)
 
 -- | If instruction.
 primIf :: MonadEval m => PrimOp m
 primIf = PrimOp "if"
     (TypeScheme (Set.singleton "a") (TFun tBool (TFun (TVar "a") (TFun (TVar "a") (TVar "a")))))
-    (Right . OFun $ \cond -> do
-        return . Right . OFun $ \th ->
-            return . Right . OFun $ \el -> do
+    (newObj . OFun $ \cond -> do
+        newObj . OFun $ \th ->
+            newObj . OFun $ \el -> do
                 OBool val <- eval cond
                 if val
                    then return th
@@ -122,52 +131,52 @@ primIf = PrimOp "if"
 primPrepend :: MonadEval m => PrimOp m
 primPrepend = PrimOp ":"
     (TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TList (TVar "a")) (TList (TVar "a")))))
-    (Right . OFun $ \el ->
-        return . Right . OFun $ \list -> do
+    (newObj . OFun $ \el ->
+        newObj . OFun $ \list -> do
             OList list' <- eval list
-            return . Right . OList $ el:list')
+            newObj . OList $ el:list')
 
 primHead :: MonadEval m => PrimOp m
 primHead = PrimOp "head"
     (TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) (TVar "a")))
-    (Right . OFun $ \list -> do
+    (newObj . OFun $ \list -> do
         OList list' <- eval list
         case list' of
-             []  -> return . Left $ "head: empty list"
+             []  -> newBot "head: empty list"
              x:_ -> return x)
 
 primTail :: MonadEval m => PrimOp m
 primTail = PrimOp "tail"
     (TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) (TList (TVar "a"))))
-    (Right . OFun $ \list -> do
+    (newObj . OFun $ \list -> do
         OList list' <- eval list
         case list' of
-             []   -> return . Left $ "tail: empty list"
-             _:xs -> return . Right . OList $ xs)
+             []   -> newBot "tail: empty list"
+             _:xs -> newObj . OList $ xs)
 
 primNull :: MonadEval m => PrimOp m
 primNull = PrimOp "null"
     (TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) tBool))
-    (Right . OFun $ \list -> do
+    (newObj . OFun $ \list -> do
         OList list' <- eval list
-        return . Right . OBool $ null list')
+        newObj . OBool $ null list')
 
 -- | IO actions.
 primPrintInt :: MonadEval m => PrimOp m
 primPrintInt = PrimOp "printInt"
     (TypeScheme Set.empty (TFun tInt tUnit))
-    (Right . OFun $ \x -> do
+    (newObj . OFun $ \x -> do
         OInt x' <- eval x
         liftIO $ print x'
-        return $ Right $ OUnit)
+        newObj OUnit)
 
 primPrintStr :: MonadEval m => PrimOp m
 primPrintStr = PrimOp "printStr"
     (TypeScheme Set.empty (TFun tString tUnit))
-    (Right . OFun $ \obj -> do
+    (newObj . OFun $ \obj -> do
         str <- evalStr obj
         liftIO $ putStr str
-        return $ Right $ OUnit)
+        newObj OUnit)
 
 -- | A list of all PrimOps.
 primOps :: MonadEval m => [PrimOp m]
