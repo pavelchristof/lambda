@@ -15,6 +15,7 @@ import Control.Lens
 import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.State
+import Text.PrettyPrint (render)
 import Data.Text.Lazy (Text)
 import Data.Scientific (Scientific)
 import Data.ByteString.Lazy (ByteString)
@@ -25,6 +26,7 @@ import Lambda.Type
 import Lambda.Lexer
 import Lambda.Syntax
 import Lambda.SourceLoc
+import Lambda.PrettyPrint
 
 }
 
@@ -237,7 +239,7 @@ lexerWrapped cont = zoom lexerState lexer >>= cont
 parseError :: Located Token -> Parser a
 parseError (L _ t) = do
     lexSt <- use lexerState
-    throwError $ "Parse error before token " ++ show t 
+    throwError $ "Parse error before token " ++ render (format t) 
         ++ " on line " ++ (show . line . location $ lexSt)
         ++ ", column " ++ (show . column . location $ lexSt)
         ++ "."

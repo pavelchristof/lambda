@@ -20,6 +20,7 @@ import qualified Data.Map as Map
 
 import Lambda.Name
 import Lambda.Type
+import Lambda.Lexer
 import Lambda.Object
 import Lambda.Syntax
 import Lambda.Errors
@@ -159,3 +160,35 @@ instance PrettyPrintIO (LObject e) where
 
 instance (PrettyPrint a, PrettyPrint k) => PrettyPrint (Map.Map a k) where
     format = Map.foldWithKey (\k a b -> b $$ format k <+> "=" <+> format a) empty
+
+instance PrettyPrint Token where
+    format TLet = doubleQuotes "let"
+    format TIn = doubleQuotes "in"
+    format TCase = doubleQuotes "case"
+    format TOf = doubleQuotes "of"
+    format TData = doubleQuotes "data"
+
+    format TLambda = doubleQuotes "λ"
+    format TAssign = doubleQuotes "="
+    format TArrow = doubleQuotes "->"
+    format TComma = doubleQuotes ","
+    format TSemi = doubleQuotes ";"
+    format TPipe = doubleQuotes "|"
+    format TOParen = doubleQuotes ""
+    format TCParen = doubleQuotes ")"
+    format TOBracket = doubleQuotes "["
+    format TCBracket = doubleQuotes "]"
+    format TOBrace = doubleQuotes "{"
+    format TCBrace = doubleQuotes "}"
+    format TUnderscore = doubleQuotes "_"
+
+    format (TInteger i) = doubleQuotes (integer i)
+    format (TReal s) = doubleQuotes (text (show s))
+    format (TChar c) = doubleQuotes (char c)
+    format (TString t) = doubleQuotes (text (unpack t))
+
+    format (TLowerId n) = doubleQuotes (format n)
+    format (TUpperId n) = doubleQuotes (format n)
+    format (TSymbol n) = doubleQuotes (format n)
+
+    format TEOF = doubleQuotes "end of file"
