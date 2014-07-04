@@ -13,7 +13,7 @@ Portability :  portable
 module Lambda.Name where
 
 import Data.String
-import Data.Text (Text, pack)
+import Data.Text.Lazy (Text, pack)
 
 -- Use a simple text for now.
 newtype Name = Name Text
@@ -21,3 +21,8 @@ newtype Name = Name Text
 
 instance IsString Name where
     fromString = Name . pack
+
+-- | A name that cannot occur in any program and is reserved for the compiler.
+-- This is used eg. unnamed function parameters.
+reservedName :: Name
+reservedName = "\0"

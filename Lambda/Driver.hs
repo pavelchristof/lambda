@@ -7,7 +7,6 @@ License     :  Apache v2.0
 
 Maintainer  :  pawel834@gmail.com
 Stability   :  experimental
-Portability :  portable
 
 -}
  
@@ -19,12 +18,11 @@ import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Cont
 import Control.Monad.IO.Class
-import Data.Text (Text)
-import Text.Parsec (parse)
+import Data.ByteString.Lazy (ByteString)
 import Text.PrettyPrint (render)
+import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
+import qualified Data.ByteString.Lazy as ByteString
 import qualified Data.Traversable as Tr
 
 import Lambda.Name
@@ -37,11 +35,12 @@ import Lambda.Object
 import Lambda.ObjGen
 import Lambda.Eval
 import Lambda.PrettyPrint
+import Lambda.SourceLoc
 
 -- | Driver targets.
 data Action = DumpAST
             | DumpTypedAST
-            | DumpObject
+            | DumpObjects
             | Evaluate
     deriving (Eq, Show, Read, Bounded, Enum)
 
@@ -69,15 +68,15 @@ printErrorStr :: MonadIO m => String -> m ()
 printErrorStr = liftIO . hPutStr stderr
 
 -- | Reads the input, either from file or from stdin.
-readInput :: MonadDriver m => ContT () m (Text, FilePath)
+readInput :: MonadDriver m => ContT () m (ByteString, FilePath)
 readInput = do
     input' <- view input
     case input' of
          Just fileName -> do
-             text <- liftIO $ Text.readFile fileName
+             text <- liftIO $ ByteString.readFile fileName
              return (text, fileName)
          Nothing -> do
-             text <- liftIO $ Text.getContents
+             text <- liftIO $ ByteString.getContents
              return (text, "standard input")
 
 -- | Prints something to the output.
@@ -89,56 +88,58 @@ printOutput t = do
          Nothing -> liftIO . hPutStr stderr $ t
 
 -- | Parses the input.
-parseInput :: MonadDriver m => (Text, FilePath) -> ContT () m [Stmt PExpr]
+parseInput :: MonadDriver m => (ByteString, FilePath) -> ContT () m [Located (Decl LExpr)]
 parseInput (text, filePath) = ContT $ \cont ->
-    case parse program filePath text of
-         Left err -> liftIO . print $ err
-         Right stmts -> do
+    case parse text of
+         Left err -> printErrorStr err
+         Right decls -> do
              target' <- view target
              if target' == DumpAST
-                then printOutput . render . format $ stmts
-                else cont stmts
+                then printOutput . render . format $ (map unLoc decls)
+                else cont decls
 
 -- | Transforms untyped AST into typed AST.
-inferTypes :: MonadDriver m => [Stmt PExpr] -> ContT () m [Stmt TPExpr]
-inferTypes stmts = ContT $ \cont ->
-    case runInfer (inferStmts stmts) initBindings of
+inferTypes :: MonadDriver m => [Located (Decl LExpr)] -> ContT () m [Located (Decl TLExpr)]
+inferTypes decls = ContT $ \cont ->
+    case runInfer (inferStmts decls) of
          Left err -> printError err
          Right (_, typedStmts) -> do
              target' <- view target
              if target' == DumpTypedAST
-                then printOutput . render . format $ typedStmts
+                then printOutput . render . format $ (map unLoc typedStmts)
                 else cont typedStmts
-    where 
-        initBindings = Map.fromList $ map extractBinding (primOps :: [PrimOp Eval])
-        extractBinding (PrimOp n s _) = (n, s)
 
 -- | Generates objects from a typed AST.
-genObjs :: MonadDriver m => [Stmt TPExpr] -> ContT () m (LObject Eval)
-genObjs stmts = ContT $ \cont -> do
+genObjs :: MonadDriver m => [Located (Decl TLExpr)] -> ContT () m (Map Name (LObject Eval))
+genObjs decls = ContT $ \cont -> do
     -- Initialize PrimOps.
     let primOpsMap = Map.fromList (map (\(PrimOp n _ o) -> (n, o)) (primOps :: [PrimOp Eval]))
+                    `Map.union`
+                     Map.fromList (map (\(PrimCons n _ o) -> (n, o)) (primCons :: [PrimCons Eval]))
         instPrimOps = Tr.sequence primOpsMap
     res <- liftIO $ runEval instPrimOps
     case res of
          Left err -> printErrorStr ("Internal error during PrimOps initialization: " ++ err)
          Right binds -> do
-             -- Generate the objects.
-             obj <- liftIO $ runObjGen (objGenStmts stmts) binds
+             -- Generate the bindings.
+             objBinds <- liftIO $ runObjGen (objGenDecls (map unLoc decls)) binds
              target' <- view target
-             if target' == DumpObject
+             if target' == DumpObjects
                 then do
-                    doc <- liftIO $ formatIO obj
-                    printOutput $ render doc
-                else cont obj
+                    docs <- liftIO $ Tr.mapM formatIO objBinds
+                    printOutput (render $ format docs)
+                else cont objBinds
 
--- | Evaluate the object.
-evalObj :: MonadDriver m => LObject Eval -> ContT () m ()
-evalObj obj = do
-    r <- liftIO $ runEval (eval obj)
-    case r of
-         Left err -> printOutput ("Error: " ++ err)
-         Right _ -> return ()
+-- | Evaluate the main function.
+evalObj :: MonadDriver m => Map Name (LObject Eval) -> ContT () m ()
+evalObj objBinds = do
+    case Map.lookup "main" objBinds of
+         Just obj -> do
+            r <- liftIO $ runEval (eval obj)
+            case r of
+                Left err -> printOutput ("Error: " ++ err)
+                Right _ -> return ()
+         Nothing -> printOutput ("No main.")
 
 driver :: MonadDriver m => m ()
 driver = runContT (readInput >>= parseInput >>= inferTypes >>= genObjs >>= evalObj) (return . return ())

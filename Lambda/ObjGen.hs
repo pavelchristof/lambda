@@ -17,15 +17,17 @@ import Control.Lens
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.Scientific
 import Data.IORef
 import Data.Map (Map)
-import Data.Text (unpack)
+import Data.Text.Lazy (unpack)
 import Data.Functor.Foldable
 import qualified Data.Map as Map
 
 import Lambda.Syntax
 import Lambda.Name
 import Lambda.Object
+import Lambda.SourceLoc
 
 -- | State.
 data OGEnv e = OGEnv
@@ -44,19 +46,17 @@ runObjGen m b = runReaderT m (OGEnv b)
 objGenLiteral :: Literal -> ObjGen e (Object e)
 objGenLiteral lit =
     case lit of
-         LitUnit -> return OUnit
-         LitBool val -> return $ OBool val
          LitChar val -> return $ OChar val
          LitString text -> do
              list <- liftIO $ mapM (newIORef . Right . OChar) (unpack text)
              return $ OList list
          LitInteger val -> return $ OInt (fromInteger val)
-         LitDouble val -> return $ ODouble val
+         LitReal val -> return $ ODouble (toRealFloat val)
          LitEmptyList -> return $ OList []
 
 -- | F-algebra for expressions.
-objGenExprA :: MonadIO e => TPExprF (ObjGen e (LObject e)) -> ObjGen e (LObject e)
-objGenExprA (EVar _ name) = do 
+objGenExprA :: MonadIO e => TLExprF (ObjGen e (LObject e)) -> ObjGen e (LObject e)
+objGenExprA (EVar _ name) = do
     Just obj <- view $ bindings . at name
     return obj
 objGenExprA (ELit _ lit) = do
@@ -71,26 +71,60 @@ objGenExprA (EApp _ f x) = do
     xObj <- x
     newObj $ OThunk fObj xObj
 objGenExprA (ELet _ name f g) = do
-    fObj <- f
-    local (bindings . at name .~ Just fObj) g
-objGenExprA (EFix _ name body) = do
     b <- view bindings
-    liftIO $ mfix $ \obj -> runObjGen body (Map.insert name obj b)
+    fObj <- liftIO $ mfix (\obj -> runObjGen f (Map.insert name obj b))
+    local (bindings . at name .~ Just fObj) g
+objGenExprA (ECase _ e p) = do
+    eObj <- e
+    caseObjs <- mapM objGenCase p
+    newObj $ OCase eObj caseObjs
+
+-- | Generates a case branch.
+objGenCase :: MonadIO e => (Located Pattern, ObjGen e (LObject e)) -> ObjGen e (Pattern, LObject e)
+objGenCase (L _ p, e) = do
+    let names = case p of
+                     Decons _ names -> map unLoc names
+                     Wildcard name -> [name]
+    eObj <- objGenCaseE names e
+    return (p, eObj)
+
+-- | Generates a function object that takes some arguments and evaluates expr with them bound to names.
+objGenCaseE :: MonadIO e => [Maybe Name] -> ObjGen e (LObject e) -> ObjGen e (LObject e)
+objGenCaseE [] expr = expr
+objGenCaseE ((Just name):names) expr = do
+    b <- view bindings
+    newObj $ OFun (\obj ->
+        liftIO $ runObjGen (objGenCaseE names expr) (Map.insert name obj b))
+objGenCaseE (Nothing:names) expr = objGenCaseE names expr
 
 -- | Generates an object from an expression.
-objGenExpr :: MonadIO e => TPExpr -> ObjGen e (LObject e)
+objGenExpr :: MonadIO e => TLExpr -> ObjGen e (LObject e)
 objGenExpr = cata objGenExprA
 
 -- | F-algebra for statement lists.
-objGenStmtsA :: MonadIO e => Stmt TPExpr -> ObjGen e (LObject e) -> ObjGen e (LObject e)
-objGenStmtsA (SLet _ name f) g = do
-    fObj <- objGenExpr f
+objGenDeclsA :: MonadIO e => Decl TLExpr -> ObjGen e (Map Name (LObject e)) -> ObjGen e (Map Name (LObject e))
+objGenDeclsA (DAssign name f) g = do
+    b <- view bindings
+    fObj <- liftIO $ mfix (\obj -> runObjGen (objGenExpr f) (Map.insert name obj b))
     local (bindings . at name .~ Just fObj) g
-objGenStmtsA (SEval _ f) g = do
-    fObj <- objGenExpr f
-    gObj <- g
-    newObj $ OSeq fObj gObj
+objGenDeclsA (DData name consDefs) g = do
+    let genConsObj (ConsDef consName args) = do
+            obj <- genConsFun consName (length args) []
+            return (consName, obj)
+    consObjs <- mapM genConsObj (map unLoc consDefs)
+    let addBinding env (consName, consObj) =
+            env & bindings . at consName .~ Just consObj
+    env <- ask
+    let env' = foldl addBinding env consObjs
+    local (const env') g
 
--- | Generates an object from a list of statements.
-objGenStmts :: MonadIO e => [Stmt TPExpr] -> ObjGen e (LObject e)
-objGenStmts = foldr objGenStmtsA (newObj OUnit)
+-- Generates a constructor.
+genConsFun :: MonadIO e => Name -> Int -> [LObject e] -> ObjGen e (LObject e)
+genConsFun name 0 args = newObj $ OCons name (reverse args)
+genConsFun name n args = do
+    b <- view bindings
+    newObj $ OFun (\arg -> liftIO $ runObjGen (genConsFun name (n - 1) (arg:args)) b)
+
+-- | Generates object bindings from a list of statements.
+objGenDecls :: MonadIO e => [Decl TLExpr] -> ObjGen e (Map Name (LObject e))
+objGenDecls = foldr objGenDeclsA (view bindings)

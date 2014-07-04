@@ -1,69 +1,88 @@
 -- Function application.
-let $ = λf.λx.f x;
+f $ x = f x;
 
 -- Function composition.
-let . = λf.λg.λx.f (g x);
+f . g = λx -> f (g x);
 
 -- Flips arguments of a function.
-let flip = λf.λx.λy.f y x;
+flip f x y = f y x;
+
+-- We can define "if" using pattern matching.
+if cond th el =
+    case cond of {
+         True -> th;
+         False -> el
+    };
 
 -- Absolute value.
-let abs = λx.
+abs x =
     if (x >= 0)
-        x
-        (0 - x);
+       x
+       (0 - x);
 
 -- Fibonacci!
-let rec fib = λx.
+fib x =
     if (x <= 1)
         1
         ((fib (x - 1)) + (fib (x - 2)));
 
 -- Right fold on a list.
-let foldr = λk.λz.
-    let rec go = λl.
-        if (null l)
+foldr k z =
+    let go l = if (null l)
             z
             (k (head l) (go (tail l)))
     in go;
 
 -- Concatenates two lists.
-let ++ = flip $ foldr (:);
+(++) = flip $ foldr (:);
 
 -- String to int conversion.
-let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-let indexOf = λe.
-    let rec indexOf' = λi.λl.
+indexOf e =
+    let indexOf' i l =
         if ((head l) == e)
             i
             (indexOf' (i + 1) (tail l))
     in  indexOf' 0;
-let strToInt = foldr (λc.λn. (10*n) + (indexOf c digits)) 0;
+strToInt =
+    let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    in  foldr (λc n -> (10*n) + (indexOf c digits)) 0;
 
--- Sum elements of a list while converting strings to ints.
-printInt $ foldr (λe.((+) (strToInt e))) 0 (["123", "543"] ++ ["42", "18"]);
+-- Trees!
+data Tree = Leaf Int | Node Tree Tree;
 
--- Fixed-point combinator.
-let fix = λf.
-    let rec x = f x
-    in  x;
-    
-let alwaysFive = λx.5;
-printInt (fix alwaysFive);
+exampleTree =
+    Node
+        (Node (Leaf 5) (Leaf 9))
+        (Node (Node (Leaf 3) (Leaf 1)) (Leaf 9));
 
--- Top level expressions are evaluated to WHNF form. 
--- These numbers won't be printed due to laziness.
-[printInt 123, printInt 543];
+printTree t =
+    case t of {
+         Leaf i -> printInt i;
+         Node t1 t2 -> 
+            seq (printStr "(") $ 
+            seq (printTree t1) $
+            seq (printStr " ") $
+            seq (printTree t2) $
+                 printStr ")"
+    };
 
--- seq can be used to force objects to be evaulted to WHNF form.
-let list = [seq (printStr "Hello world!\n") ()]
-in  head list;
+-- Anything that main returns will be evaluated to WHNF (at least for now).
+main = printTree exampleTree;
 
--- The same with no seq.
-let noseq = λx.λy.y;
-let list = [noseq (printStr "Goodbye world!\n") ()]
-in  head list;
+-- Some pattern matching and parsing tests.
+printBool b =
+    case b of {
+         True -> printStr "True";
+         False -> printStr "False"
+    };
 
--- This prints "test" only once, because the thunk gets replaced once it's evaluated.
-let x = seq (printStr "test") 3 
-in  x + x;
+unitTest = case () of {
+         () -> printInt 5;
+         _ -> error "wtf!"
+    };
+
+-- Data types parsing tests.
+data Test = Test Int [Int] [Bool] [[[Tree]]]
+          | Test2 Double [Double]
+          | Test3 () () () ()
+          | Test4;

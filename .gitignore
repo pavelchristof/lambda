@@ -1,4 +1,6 @@
 .cabal-sandbox/
+Lambda/Lexer.hs
+Lambda/Parser.hs
 dist/
 cabal.sandbox.config
 *.o

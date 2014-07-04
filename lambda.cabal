@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                lambda
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            An interpreter for a toy function language based on the Hindley–Milner type system.
 -- description:         
 license:             Apache-2.0
@@ -17,10 +17,11 @@ cabal-version:       >=1.10
 
 executable lambda
   main-is:             Main.hs
-  other-modules:       
+  other-modules:       Lambda.Lexer, Lambda.Parser
   other-extensions:    TemplateHaskell
-  build-depends:       base, parsec, text, recursion-schemes, lens, mtl, containers, transformers, pretty, 
-                       optparse-applicative
+  build-depends:       base, text, recursion-schemes, lens, mtl, containers, transformers, pretty, 
+                       optparse-applicative, scientific, monad-loops, array, bytestring
+  build-tools:         alex, happy
   -- hs-source-dirs:      
   default-language:    Haskell2010
   default-extensions:  OverloadedStrings, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses

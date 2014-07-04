@@ -16,6 +16,8 @@ module Lambda.PrimOp where
 import Data.IORef
 import Text.PrettyPrint (render)
 import Control.Monad.IO.Class
+import Data.Map (Map)
+import Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -25,13 +27,46 @@ import Lambda.Object
 import Lambda.Eval
 import Lambda.PrettyPrint
 
-data PrimOp m = PrimOp Name TypeScheme (m (LObject m))
-
 debugPrint :: (PrettyPrint a, MonadEval m) => m a -> m a
 debugPrint m = do
     val <- m
     liftIO . putStrLn . render . format $ val
     return val
+
+-- | A list of build in type names.
+buildInTypes :: Set Name
+buildInTypes = Set.fromList ["()", "Bool", "Char", "Int", "Double"]
+
+-- | Primitive constructors.
+data PrimCons m = PrimCons Name ([TypeScheme], Type) (m (LObject m))
+
+-- The only unit constructor.
+primUnit :: MonadEval m => PrimCons m
+primUnit = PrimCons "()"
+    ([], tUnit)
+    (newObj $ OCons "()" [])
+
+-- | True.
+primTrue :: MonadEval m => PrimCons m
+primTrue = PrimCons "True"
+    ([], tBool)
+    (newObj $ OCons "True" [])
+
+-- | False.
+primFalse :: MonadEval m => PrimCons m
+primFalse = PrimCons "False"
+    ([], tBool)
+    (newObj $ OCons "False" [])
+
+primCons :: MonadEval m => [PrimCons m]
+primCons =
+    [ primUnit
+    , primTrue
+    , primFalse
+    ]
+
+-- | Primitive operation.
+data PrimOp m = PrimOp Name TypeScheme (m (LObject m))
 
 -- | Undefined value, that is bottom.
 primUndefined :: MonadEval m => PrimOp m
@@ -72,7 +107,9 @@ liftIntPred name op = PrimOp name
         newObj . OFun $ \y -> do
             OInt x' <- eval x
             OInt y' <- eval y
-            newObj . OBool $ (x' `op` y'))
+            if x' `op` y'
+               then newObj $ OCons "True" []
+               else newObj $ OCons "False" [])
 
 -- Int operators.
 primAdd :: MonadEval m => PrimOp m
@@ -104,24 +141,15 @@ primEq :: MonadEval m => PrimOp m
 primEq = PrimOp "=="
     (TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TVar "a") tBool)))
     (newObj . OFun $ \a ->
-        newObj . OFun $ \b ->
-            objEq a b >>= newObj . OBool)
-
--- | If instruction.
-primIf :: MonadEval m => PrimOp m
-primIf = PrimOp "if"
-    (TypeScheme (Set.singleton "a") (TFun tBool (TFun (TVar "a") (TFun (TVar "a") (TVar "a")))))
-    (newObj . OFun $ \cond -> do
-        newObj . OFun $ \th ->
-            newObj . OFun $ \el -> do
-                OBool val <- eval cond
-                if val
-                   then return th
-                   else return el)
+        newObj . OFun $ \b -> do
+            b <- objEq a b
+            if b
+               then newObj $ OCons "True" []
+               else newObj $ OCons "False" [])
 
 -- List functions.
-primCons :: MonadEval m => PrimOp m
-primCons = PrimOp ":"
+primListCons :: MonadEval m => PrimOp m
+primListCons = PrimOp ":"
     (TypeScheme (Set.singleton "a") (TFun (TVar "a") (TFun (TList (TVar "a")) (TList (TVar "a")))))
     (newObj . OFun $ \el ->
         newObj . OFun $ \list -> do
@@ -151,7 +179,9 @@ primNull = PrimOp "null"
     (TypeScheme (Set.singleton "a") (TFun (TList (TVar "a")) tBool))
     (newObj . OFun $ \list -> do
         OList list' <- eval list
-        newObj . OBool $ null list')
+        if null list'
+           then newObj $ OCons "True" []
+           else newObj $ OCons "False" [])
 
 -- | IO actions.
 primPrintInt :: MonadEval m => PrimOp m
@@ -159,8 +189,8 @@ primPrintInt = PrimOp "printInt"
     (TypeScheme Set.empty (TFun tInt tUnit))
     (newObj . OFun $ \x -> do
         OInt x' <- eval x
-        liftIO $ print x'
-        newObj OUnit)
+        liftIO $ putStr (show x')
+        newObj $ OCons "()" [])
 
 primPrintStr :: MonadEval m => PrimOp m
 primPrintStr = PrimOp "printStr"
@@ -168,7 +198,7 @@ primPrintStr = PrimOp "printStr"
     (newObj . OFun $ \obj -> do
         str <- evalStr obj
         liftIO $ putStr str
-        newObj OUnit)
+        newObj $ OCons "()" [])
 
 -- | A list of all PrimOps.
 primOps :: MonadEval m => [PrimOp m]
@@ -185,8 +215,7 @@ primOps =
     , primGt
     , primGtEq
     , primEq
-    , primIf
-    , primCons
+    , primListCons
     , primHead
     , primTail
     , primNull

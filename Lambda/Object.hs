@@ -15,17 +15,19 @@ module Lambda.Object where
 
 import Data.IORef
 import Control.Monad.IO.Class
+import Lambda.Name
+import Lambda.Syntax
 
 -- | An unflited object.
 data Object m = OFun ((LObject m) -> m (LObject m))
               | OThunk (LObject m) (LObject m)
               | OSeq (LObject m) (LObject m)
-              | OUnit
-              | OBool Bool
               | OChar Char
               | OInt Int
               | ODouble Double
               | OList [LObject m]
+              | OCons Name [LObject m]
+              | OCase (LObject m) [(Pattern, LObject m)]
 
 -- | A lifted object. Bottom is represented as Left.
 type LObject m = IORef (Either String (Object m))

@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable, FunctionalDependencies #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 {- |
 Module      :  Lambda.Syntax
 Description :  AST definition.
@@ -15,32 +15,36 @@ module Lambda.Syntax where
 
 import Control.Lens
 import Control.Applicative
-import Text.Parsec (SourcePos)
-import Data.Text (Text)
+import Data.Scientific (Scientific)
+import Data.Text.Lazy (Text)
 import Data.Foldable
 import Data.Traversable
 import Data.Functor.Foldable (Fix(..))
 
 import Lambda.Name
 import Lambda.Type
+import Lambda.SourceLoc
 
--- Literal.
-data Literal = LitUnit
-             | LitBool Bool
-             | LitChar Char
+-- | Literal.
+data Literal = LitChar Char
              | LitString Text
              | LitInteger Integer
-             | LitDouble Double
+             | LitReal Scientific
              | LitEmptyList
     deriving (Eq, Show)
 
--- Expression.
+-- | A pattern.
+data Pattern = Decons Name [Located (Maybe Name)]
+             | Wildcard (Maybe Name)
+    deriving (Eq, Show)
+
+-- | Expression.
 data ExprF a expr = EVar a Name
                   | ELit a Literal
                   | EAbs a Name expr
                   | EApp a expr expr
                   | ELet a Name expr expr
-                  | EFix a Name expr
+                  | ECase a expr [(Located Pattern, expr)]
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
 dataOf :: Lens' (ExprF a e) a
@@ -49,7 +53,7 @@ dataOf f (ELit d l) = ELit <$> (f d) ?? l
 dataOf f (EAbs d n e) = EAbs <$> (f d) ?? n ?? e
 dataOf f (EApp d e1 e2) = EApp <$> (f d) ?? e1 ?? e2
 dataOf f (ELet d n e1 e2) = ELet <$> (f d) ?? n ?? e1 ?? e2
-dataOf f (EFix d n e) = EFix <$> (f d) ?? n ?? e
+dataOf f (ECase d e p) = ECase <$> (f d) ?? e ?? p
 
 unfix :: Lens' (Fix f) (f (Fix f))
 unfix f (Fix x) = Fix <$> (f x)
@@ -70,38 +74,35 @@ fEApp d e1 e2 = Fix $ EApp d e1 e2
 fELet :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a) -> Fix (ExprF a)
 fELet d n e1 e2 = Fix $ ELet d n e1 e2
 
-fEFix :: a -> Name -> Fix (ExprF a) -> Fix (ExprF a)
-fEFix d n e = Fix $ EFix d n e
+fECase :: a -> Fix (ExprF a) -> [(Located Pattern, Fix (ExprF a))] -> Fix (ExprF a)
+fECase d e p = Fix $ ECase d e p
 
--- Lenses.
-class HasPos t where
-    posOf :: Lens' t SourcePos
-
+-- | Lenses.
 class HasType t where
     typeOf :: Lens' t Type
 
--- Expression with source position.
-type PExprF = ExprF SourcePos
-type PExpr = Fix PExprF
+-- | Expression with source position.
+type LExprF = ExprF SourceRange
+type LExpr = Fix LExprF
 
-instance HasPos PExpr where
-    posOf = unfix . dataOf
+instance HasRange LExpr where
+    srcRange = unfix . dataOf
 
--- Typed, positioned expression.
-type TPExprF = ExprF (SourcePos, Type)
-type TPExpr = Fix TPExprF
+-- | Typed, positioned expression.
+type TLExprF = ExprF (SourceRange, Type)
+type TLExpr = Fix TLExprF
 
-instance HasPos TPExpr where
-    posOf = unfix . dataOf . _1
+instance HasRange TLExpr where
+    srcRange = unfix . dataOf . _1
 
-instance HasType TPExpr where
+instance HasType TLExpr where
     typeOf = unfix . dataOf . _2
 
--- Statement.
-data Stmt expr = SLet SourcePos Name expr
-               | SEval SourcePos expr
-    deriving (Eq, Show, Functor, Foldable, Traversable)
+-- | Constructor definition.
+data ConsDef = ConsDef Name [Type]
+    deriving (Eq, Show)
 
-instance HasPos (Stmt expr) where
-    posOf f (SLet pos n e) = SLet <$> f pos ?? n ?? e
-    posOf f (SEval pos e) = SEval <$> f pos ?? e
+-- | Top level declaration.
+data Decl expr = DAssign Name expr
+               | DData Name [Located ConsDef]
+    deriving (Eq, Show, Functor, Foldable, Traversable)
