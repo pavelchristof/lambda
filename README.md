@@ -113,7 +113,7 @@ Available options:
   -a,--action ACTION       Compiler action. (default: Evaluate)
   
 Possible actions:
-    * DumpAST               Dumps AST without type annotations.
-    * DumpTypedAST          Dumps AST with type annotations.
-    * DumpObjects           Dumps objects.
-    * Evaluate              Evaluates the "main" function.
+* DumpAST               Dumps AST without type annotations.
+* DumpTypedAST          Dumps AST with type annotations.
+* DumpObjects           Dumps objects.
+* Evaluate              Evaluates the "main" function.
