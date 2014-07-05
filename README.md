@@ -104,6 +104,7 @@ data Test = Test Int [Int] [Bool] [[[Tree]]]
 Usage
 =====
 
+```
 Usage: lambda [INPUT FILE] [-o|--output FILE] [-a|--action ACTION]
   Lambda interpreter.
 
@@ -113,7 +114,8 @@ Available options:
   -a,--action ACTION       Compiler action. (default: Evaluate)
   
 Possible actions:
-* DumpAST - Dumps AST without type annotations.
-* DumpTypedAST - Dumps AST with type annotations.
-* DumpObjects - Dumps objects.
-* Evaluate - Evaluates the "main" function.
+  DumpAST                  Dumps AST without type annotations.
+  DumpTypedAST             Dumps AST with type annotations.
+  DumpObjects              Dumps objects.
+  Evaluate                 Evaluates the "main" function.
+```
