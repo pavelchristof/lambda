@@ -37,14 +37,12 @@ runEval = runExceptT
 eval :: MonadEval m => LObject m -> m (Object m)
 eval ref = do
     obj <- liftIO $ readIORef ref
-    case obj of
+    res <- case obj of
          Left msg -> throwError msg
          Right (OThunk f x) -> do
              OFun f' <- eval f
              r <- f' x
-             r' <- eval r
-             liftIO $ writeIORef ref (Right r')
-             return r'
+             eval r
          Right (OSeq f g) -> do
              eval f
              eval g
@@ -58,9 +56,11 @@ eval ref = do
                                        Decons _ names -> map unLoc names
                                        Wildcard name -> [name]
                       r <- callCase names args resExpr
-                      eval r
+                      eval r 
                   Nothing -> throwError "Pattern matching failure."
          Right obj -> return obj
+    writeIORef ref (Right res)
+    return res
 
 callCase :: MonadEval m => [Maybe Name] -> [LObject m] -> LObject m -> m (LObject m)
 callCase [] _ o = return o
@@ -74,8 +74,9 @@ callCase (n:ns) (a:as) f =
 
 -- | Compares two objects. This is a partial function. Only primitive types are comparable.
 -- A primitive type is either:
---     - A Unit, Bool, Char, Int, Double,
---     - A list over a primitive type.
+--     - A Char, Int, Double,
+--     - A list over a primitive type,
+--     - A constructor applied to primitive types.
 objEq :: MonadEval m => LObject m -> LObject m -> m Bool
 objEq a b = do
     a' <- eval a
