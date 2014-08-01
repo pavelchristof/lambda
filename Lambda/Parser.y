@@ -89,6 +89,7 @@ consList : cons                        { [$1] }
 
 cons :: { Located ConsDef }
 cons : uppid typeList                  { ConsDef <\$> fmap getName $1 <*> pure (reverse $2) }
+     | typeLit symbol typeLit          { ConsDef <\$> fmap getName $2 <*> pure [$1, $3] }
 
 typeList :: { [Type] }
 typeList : {- empty -}                 { [] }
@@ -96,6 +97,7 @@ typeList : {- empty -}                 { [] }
 
 typeLit :: { Type }
 typeLit : uppid                        { TLit . getName . unLoc \$ $1 }
+        | lowid                        { TVar . getName . unLoc \$ $1 }
         | typeLit '->' typeLit         { TFun $1 $3 }
         | '[' typeLit ']'              { TList $2 }
         | '(' typeLit ')'              { $2 }
@@ -137,7 +139,7 @@ patCase : pattern '->' expr            { ($1, $3) }
 pattern :: { Located Pattern }
 pattern : var                          { Wildcard <\$> $1 }
         | uppid vars                   { Decons <\$> fmap getName $1 <*> gatherLoc (reverse $2) }
-        | symbol vars                  { Decons <\$> fmap getName $1 <*> gatherLoc (reverse $2) }
+        | var symbol var               { Decons <\$> fmap getName $2 <*> gatherLoc [$1, $3] }
         | '(' ')'                      { L (spanLoc $1 $2) (Decons "()" []) }
 
 -- A list of variables used in a pattern.
