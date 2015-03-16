@@ -1,7 +1,7 @@
 lambda
 ======
 
-Lamda is an interpreter for a toy function language of the same name. It is written in Haskell, using Alex/Happy for parsing.
+Lamda is an interpreter for a toy function language. It is written in Haskell (and is nearly a subset of Haskell), using Alex/Happy for parsing. The purpose of this project was to learn about type inference.
 
 The language is based on polymorphic lambda calculus with Hindley-Milner type system. It allows no explicit type annotations, types are fully inferred and statically check. Lambda supports algebraic data types and simple pattern matching.
 
